@@ -31,6 +31,11 @@
 - Commit messages: concise, present-tense imperatives (e.g., “Add client-only HDR viewer”); keep body optional unless rationale is non-obvious.
 - Pull requests: small, focused changes; include summary, manual test steps, and screenshots/GIFs for UI tweaks; link issues when applicable and note any new dependencies or assets.
 
+## Branching & Release Flow
+- Work on `dev` first; push all feature and fix branches via `dev` (or open PRs into `dev`) so CI runs before promotion.
+- `main` is release-ready; only fast-forward or merge from tested `dev` (ideally via PR) after green CI.
+- For significant or user-facing changes, open a PR (dev → main) even if you have direct push rights.
+
 ## Security & Configuration Tips
 - The app is client-only; avoid adding upload endpoints or third-party telemetry.
 - Preserve strict file validation (currently accepts only the bundled HDR sample); if supporting more files, keep explicit allowlists and clear user messaging.
