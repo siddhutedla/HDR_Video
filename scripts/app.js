@@ -1,5 +1,3 @@
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
 const imageShell = document.getElementById('imageShell');
 const imageCanvas = document.getElementById('imageCanvas');
 const hdrFileInfo = document.getElementById('hdrFileInfo');
@@ -15,9 +13,6 @@ const capabilityNote = document.getElementById('capabilityNote');
 
 const ALLOWED_FILE = 'HDR_041_Path_Ref.hdr';
 const BUNDLED_PATH = `./assets/${ALLOWED_FILE}`;
-
-// Restrict picker to .hdr only
-fileInput.setAttribute('accept', '.hdr');
 
 // Capability detection (approximate; depends on browser + GPU + display)
 function detectHDR() {
@@ -36,52 +31,12 @@ detectHDR();
 // Auto-load bundled HDR file on page load
 fetchHDR(BUNDLED_PATH, ALLOWED_FILE);
 
-// Handle file selection
-fileInput.addEventListener('change', (evt) => {
-  const file = evt.target.files?.[0];
-  if (file) handleFile(file);
-});
-
-// Drag-drop support
-['dragenter', 'dragover'].forEach(eventName => {
-  dropzone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.style.borderColor = 'var(--accent)';
-  });
-});
-['dragleave', 'drop'].forEach(eventName => {
-  dropzone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropzone.style.borderColor = 'rgba(255,255,255,0.18)';
-  });
-});
-dropzone.addEventListener('drop', (e) => {
-  const file = e.dataTransfer?.files?.[0];
-  if (file) handleFile(file);
-});
-
-dropzone.addEventListener('click', () => fileInput.click());
-
-function handleFile(file) {
-  if (file.name !== ALLOWED_FILE) {
-    showError(`Only ${ALLOWED_FILE} is permitted.`);
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = () => renderHDR(reader.result, file.name);
-  reader.onerror = () => showError('Failed to read the HDR file.');
-  reader.readAsArrayBuffer(file);
-}
-
 async function fetchHDR(url, name) {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const buffer = await res.arrayBuffer();
-    renderHDR(buffer, name, true);
+    safeRenderHDR(buffer, name, true);
   } catch (err) {
     showError(`Could not load bundled HDR (${err.message}). Try dropping the local copy.`);
   }
@@ -93,6 +48,15 @@ function showError(msg) {
   hdrNote.textContent = msg;
   imageCanvas.width = 0;
   imageCanvas.height = 0;
+}
+
+function safeRenderHDR(buffer, name, fromBundle = false) {
+  try {
+    renderHDR(buffer, name, fromBundle);
+  } catch (err) {
+    console.error('Failed to render HDR:', err);
+    showError(`${name} is not a valid Radiance HDR file (${err.message}).`);
+  }
 }
 
 function renderHDR(arrayBuffer, name, fromBundle = false) {
