@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HDR Video Viewer</title>
+  <link rel="stylesheet" href="./styles/main.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__copy">
+      <p class="eyebrow">Local & client-only</p>
+      <h1>HDR Video Viewer</h1>
+      <p class="lede">Drop an HDR10 / PQ / HLG video to preview it without uploading. Everything stays in your browser.</p>
+      <div class="chips">
+        <span id="hdr-support" class="chip">Checking HDR support…</span>
+        <span id="gamut" class="chip">Display gamut: …</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="card">
+      <label class="dropzone" id="dropzone" for="fileInput">
+        <input id="fileInput" type="file" accept=".hdr" hidden />
+        <p class="drop-title">Drop the sample HDR file</p>
+        <p class="drop-sub">Only HDR_041_Path_Ref.hdr is allowed</p>
+        <p class="hint">Everything stays local; we reject any other file.</p>
+      </label>
+    </section>
+
+    <section class="card" id="imageShell" hidden>
+      <div class="player-meta">
+        <p id="hdrFileInfo" class="meta-line"></p>
+        <p id="hdrNote" class="meta-line note"></p>
+      </div>
+      <div class="player-frame image-frame">
+        <canvas id="imageCanvas"></canvas>
+      </div>
+    </section>
+
+    <section class="card" id="playerShell" hidden>
+      <div class="player-meta">
+        <p id="fileInfo" class="meta-line"></p>
+        <p id="capabilityNote" class="meta-line note"></p>
+      </div>
+      <div class="player-frame">
+        <video id="player" controls playsinline preload="metadata"></video>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./scripts/app.js"></script>
+</body>
+</html>
