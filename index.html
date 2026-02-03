@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HDR Video Viewer</title>
   <link rel="stylesheet" href="./styles/main.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 </head>
 <body>
   <header class="hero">
     <div class="hero__copy">
       <p class="eyebrow">Local & client-only</p>
-      <h1>HDR Video Viewer</h1>
-      <p class="lede">Drop an HDR10 / PQ / HLG video to preview it without uploading. Everything stays in your browser.</p>
+      <h1>Gain Map Preview</h1>
+      <p class="lede">Compare the bundled JPEG with and without gain applied. Everything stays in your browser.</p>
       <div class="chips">
         <span id="hdr-support" class="chip">Checking HDR support…</span>
         <span id="gamut" class="chip">Display gamut: …</span>
@@ -20,23 +21,24 @@
   </header>
 
   <main class="shell">
-    <section class="card" id="imageShell" hidden>
+    <section class="card" id="gainShell">
       <div class="player-meta">
-        <p id="hdrFileInfo" class="meta-line"></p>
-        <p id="hdrNote" class="meta-line note"></p>
+        <p id="gainFileInfo" class="meta-line"></p>
+        <p id="gainNote" class="meta-line note"></p>
       </div>
-      <div class="player-frame image-frame">
-        <canvas id="imageCanvas"></canvas>
-      </div>
-    </section>
 
-    <section class="card" id="playerShell" hidden>
-      <div class="player-meta">
-        <p id="fileInfo" class="meta-line"></p>
-        <p id="capabilityNote" class="meta-line note"></p>
+      <div class="compare-frame" id="gainFrame">
+        <canvas id="gainBase" class="gain-base"></canvas>
+        <canvas id="gainBoost" class="gain-boost"></canvas>
+        <input id="gainSlider" class="compare-slider" type="range" min="0" max="100" value="50" aria-label="Reveal gain-mapped image" />
       </div>
-      <div class="player-frame">
-        <video id="player" controls playsinline preload="metadata"></video>
+
+      <div class="control-row">
+        <label class="toggle">
+          <input id="enableGain" type="checkbox" checked />
+          <span>Apply gain map</span>
+        </label>
+        <button id="resetGain" type="button">Reset sample</button>
       </div>
     </section>
   </main>

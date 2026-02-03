@@ -32,9 +32,9 @@
 - Pull requests: small, focused changes; include summary, manual test steps, and screenshots/GIFs for UI tweaks; link issues when applicable and note any new dependencies or assets.
 
 ## Branching & Release Flow
-- Work on `dev` first; push all feature and fix branches via `dev` (or open PRs into `dev`) so CI runs before promotion.
-- `main` is release-ready; only fast-forward or merge from tested `dev` (ideally via PR) after green CI.
-- For significant or user-facing changes, open a PR (dev → main) even if you have direct push rights.
+- Push freely to `dev` (or merge feature branches into `dev`); keep that branch as the integration lane.
+- Do not push directly to `main`; promote changes via PRs from `dev` → `main` only.
+- Keep `main` release-ready; require green checks/reviews on the PR before merging.
 
 ## Security & Configuration Tips
 - The app is client-only; avoid adding upload endpoints or third-party telemetry.

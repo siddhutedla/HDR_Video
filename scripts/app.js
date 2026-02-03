@@ -1,18 +1,17 @@
-const imageShell = document.getElementById('imageShell');
-const imageCanvas = document.getElementById('imageCanvas');
-const hdrFileInfo = document.getElementById('hdrFileInfo');
-const hdrNote = document.getElementById('hdrNote');
+const gainShell = document.getElementById('gainShell');
+const gainBase = document.getElementById('gainBase');
+const gainBoost = document.getElementById('gainBoost');
+const gainSlider = document.getElementById('gainSlider');
+const gainFileInfo = document.getElementById('gainFileInfo');
+const gainNote = document.getElementById('gainNote');
+const resetGain = document.getElementById('resetGain');
+const enableGain = document.getElementById('enableGain');
 const hdrSupportChip = document.getElementById('hdr-support');
 const gamutChip = document.getElementById('gamut');
 
-// Legacy video elements kept for potential future use
-const playerShell = document.getElementById('playerShell');
-const player = document.getElementById('player');
-const fileInfo = document.getElementById('fileInfo');
-const capabilityNote = document.getElementById('capabilityNote');
-
-const ALLOWED_FILE = 'HDR_041_Path_Ref.hdr';
-const BUNDLED_PATH = `./assets/${ALLOWED_FILE}`;
+const BUNDLED_JPG = './assets/Triad-gain-map.jpg';
+let currentImage = null;
+let currentBuffer = null;
 
 // Capability detection (approximate; depends on browser + GPU + display)
 function detectHDR() {
@@ -28,176 +27,124 @@ function detectHDR() {
 
 detectHDR();
 
-// Auto-load bundled HDR file on page load
-fetchHDR(BUNDLED_PATH, ALLOWED_FILE);
+// Load bundled gain-map sample on page load
+loadGainMapSample();
 
-async function fetchHDR(url, name) {
+async function loadGainMapSample() {
+  gainNote.textContent = 'Loading bundled gain-map JPEG…';
+  await loadGainJpg(BUNDLED_JPG, 'Triad-gain-map.jpg');
+}
+
+async function loadGainJpg(src, name) {
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const buffer = await res.arrayBuffer();
-    safeRenderHDR(buffer, name, true);
+    const { img, buffer } = await loadImage(src);
+    currentImage = img;
+    currentBuffer = buffer;
+    renderGainCanvases(img);
+    const hasGain = buffer ? detectGainMap(buffer) : false;
+    const gainText = hasGain ? 'gain map metadata detected' : 'no gain map metadata found';
+    gainFileInfo.textContent = `${name} — ${img.width}×${img.height} (${gainText})`;
+    gainNote.textContent = 'Drag the slider to compare. Toggle gain to switch the boost on/off.';
   } catch (err) {
-    showError(`Could not load bundled HDR (${err.message}). Try dropping the local copy.`);
+    console.error('Gain map load failed', err);
+    gainNote.textContent = `Could not load JPG (${err.message}).`;
   }
 }
 
-function showError(msg) {
-  imageShell.hidden = false;
-  hdrFileInfo.textContent = '';
-  hdrNote.textContent = msg;
-  imageCanvas.width = 0;
-  imageCanvas.height = 0;
-}
-
-function safeRenderHDR(buffer, name, fromBundle = false) {
-  try {
-    renderHDR(buffer, name, fromBundle);
-  } catch (err) {
-    console.error('Failed to render HDR:', err);
-    showError(`${name} is not a valid Radiance HDR file (${err.message}).`);
-  }
-}
-
-function renderHDR(arrayBuffer, name, fromBundle = false) {
-  const t0 = performance.now();
-  const hdr = parseRadianceHDR(arrayBuffer);
-  const { width, height, data } = hdr; // data: Float32Array RGB
-
-  imageCanvas.width = width;
-  imageCanvas.height = height;
-  const ctx = imageCanvas.getContext('2d');
-  const imgData = ctx.createImageData(width, height);
-  const out = imgData.data;
-
-  for (let i = 0, j = 0; i < data.length; i += 3, j += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    out[j]     = toSRGB(tonemapACES(r)) * 255;
-    out[j + 1] = toSRGB(tonemapACES(g)) * 255;
-    out[j + 2] = toSRGB(tonemapACES(b)) * 255;
-    out[j + 3] = 255;
-  }
-
-  ctx.putImageData(imgData, 0, 0);
-  imageShell.hidden = false;
-
-  const mb = (arrayBuffer.byteLength / (1024 * 1024)).toFixed(1);
-  hdrFileInfo.textContent = `${name} — ${width}×${height}, ${mb} MB`;
-  hdrNote.textContent = fromBundle ? 'Loaded bundled sample HDR file.' : 'Loaded local HDR file.';
-  console.log(`Rendered HDR in ${(performance.now() - t0).toFixed(1)} ms`);
-
-  // Hide legacy video shell
-  playerShell.hidden = true;
-}
-
-// Simple ACES-like tone mapper
-function tonemapACES(x) {
-  return (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
-}
-
-// Gamma to sRGB-ish
-function toSRGB(x) {
-  const clamped = Math.min(1, Math.max(0, x));
-  return Math.pow(clamped, 1 / 2.2);
-}
-
-// Radiance HDR (RGBE, RLE) parser
-function parseRadianceHDR(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let offset = 0;
-  const decoder = new TextDecoder();
-
-  const readLine = () => {
-    let start = offset;
-    while (offset < bytes.length && bytes[offset] !== 0x0a) offset++;
-    const line = decoder.decode(bytes.subarray(start, offset));
-    offset++; // skip newline
-    return line.trim();
-  };
-
-  const magic = readLine();
-  if (!magic.startsWith('#?RADIANCE') && !magic.startsWith('#?RGBE')) {
-    throw new Error('Not a Radiance HDR file');
-  }
-
-  let format = '';
-  while (true) {
-    const line = readLine();
-    if (!line) break;
-    if (line.startsWith('FORMAT=')) format = line.split('=')[1];
-  }
-  if (format !== '32-bit_rle_rgbe') throw new Error(`Unsupported format: ${format}`);
-
-  const resLine = readLine();
-  let width, height;
-  const tokens = resLine.trim().split(/\s+/);
-  for (let i = 0; i < tokens.length - 1; i++) {
-    const val = parseInt(tokens[i + 1], 10);
-    if (Number.isNaN(val)) continue;
-    if (tokens[i].toUpperCase().includes('X')) width = val;
-    if (tokens[i].toUpperCase().includes('Y')) height = val;
-  }
-  if (!width || !height) {
-    const nums = resLine.match(/-?\\d+/g) || [];
-    if (nums.length >= 2) {
-      // Fallback: assume order Y then X as common case
-      height = height || parseInt(nums[0], 10);
-      width = width || parseInt(nums[1], 10);
+function loadImage(urlOrFile) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve({ img, buffer: null });
+    img.onerror = reject;
+    if (urlOrFile instanceof File) {
+      img.src = URL.createObjectURL(urlOrFile);
+    } else {
+      fetch(urlOrFile)
+        .then((r) => r.arrayBuffer())
+        .then((buffer) => {
+          const blob = new Blob([buffer], { type: 'image/jpeg' });
+          img.src = URL.createObjectURL(blob);
+          img.onload = () => resolve({ img, buffer });
+        })
+        .catch(reject);
     }
+  });
+}
+
+function renderGainCanvases(img) {
+  const width = img.naturalWidth || img.width;
+  const height = img.naturalHeight || img.height;
+  gainShell.style.setProperty('--aspect', `${width} / ${height}`);
+
+  [gainBase, gainBoost].forEach((c) => {
+    c.width = width;
+    c.height = height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+  });
+
+  if (enableGain.checked) {
+    applyGain();
+    gainBoost.style.opacity = 1;
+  } else {
+    gainBoost.style.opacity = 0;
   }
-  if (!width || !height) {
-    const bytesAround = Array.from(bytes.subarray(Math.max(0, offset - 64), Math.min(bytes.length, offset + 64)));
-    console.warn('Unexpected resolution line, raw bytes context:', bytesAround, 'line:', resLine);
-    throw new Error(`Unexpected resolution line: \"${resLine}\"`);
-  }
 
-  const numPixels = width * height;
-  const data = new Float32Array(numPixels * 3);
-  const scanline = new Uint8Array(width * 4);
+  // Reset slider
+  gainSlider.value = 50;
+  updateGainClip();
+}
 
-  for (let y = 0; y < height; y++) {
-    if (bytes[offset] !== 2 || bytes[offset + 1] !== 2) {
-      throw new Error('Unsupported scanline format');
-    }
-    const scanWidth = (bytes[offset + 2] << 8) | bytes[offset + 3];
-    if (scanWidth !== width) throw new Error('Scanline width mismatch');
-    offset += 4;
+function applyGain() {
+  // TensorFlow.js pass: simple exposure/gain boost in linear space
+  const tfImage = tf.browser.fromPixels(gainBoost);
+  const linear = tfImage.div(255).pow(2.2);
+  const boosted = linear.mul(2.8).clipByValue(0, 1); // stronger so toggle is obvious
+  const srgb = boosted.pow(1 / 2.2).mul(255).clipByValue(0, 255);
+  tf.browser.toPixels(srgb, gainBoost);
+  tfImage.dispose();
+  linear.dispose();
+  boosted.dispose();
+  srgb.dispose();
+}
 
-    for (let c = 0; c < 4; c++) {
-      let x = 0;
-      while (x < width) {
-        const val = bytes[offset++];
-        if (val > 128) {
-          const count = val - 128;
-          const rep = bytes[offset++];
-          for (let i = 0; i < count; i++) scanline[c * width + x++] = rep;
-        } else {
-          let count = val;
-          for (let i = 0; i < count; i++) scanline[c * width + x++] = bytes[offset++];
-        }
+function updateGainClip() {
+  const val = Number(gainSlider.value);
+  const percent = 100 - val;
+  // Clip right side of boosted layer to reveal base
+  gainBoost.style.clipPath = `inset(0 ${percent}% 0 0)`;
+}
+
+gainSlider.addEventListener('input', updateGainClip);
+
+enableGain.addEventListener('change', () => {
+  if (!currentImage) return;
+  renderGainCanvases(currentImage);
+});
+
+resetGain.addEventListener('click', () => {
+  loadGainMapSample();
+});
+
+function detectGainMap(buffer) {
+  // Heuristic: search for common UltraHDR gain map markers
+  const haystack = new Uint8Array(buffer);
+  const needles = ['HDRGM', 'GainMap', 'GMap', 'Ghdr'];
+  return needles.some((word) => findAscii(haystack, word));
+}
+
+function findAscii(bytes, text) {
+  const target = Array.from(text).map((ch) => ch.charCodeAt(0));
+  for (let i = 0; i <= bytes.length - target.length; i++) {
+    let match = true;
+    for (let j = 0; j < target.length; j++) {
+      if (bytes[i + j] !== target[j]) {
+        match = false;
+        break;
       }
     }
-
-    for (let x = 0; x < width; x++) {
-      const r = scanline[x];
-      const g = scanline[width + x];
-      const b = scanline[2 * width + x];
-      const e = scanline[3 * width + x];
-
-      if (e === 0) {
-        data[(y * width + x) * 3 + 0] = 0;
-        data[(y * width + x) * 3 + 1] = 0;
-        data[(y * width + x) * 3 + 2] = 0;
-      } else {
-        const f = Math.pow(2, e - 128) / 256;
-        data[(y * width + x) * 3 + 0] = r * f;
-        data[(y * width + x) * 3 + 1] = g * f;
-        data[(y * width + x) * 3 + 2] = b * f;
-      }
-    }
+    if (match) return true;
   }
-
-  return { width, height, data };
+  return false;
 }
