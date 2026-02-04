@@ -3,46 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HDR Video Viewer</title>
+  <title>TensorFlow HDR Preview</title>
   <link rel="stylesheet" href="./styles/main.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 </head>
 <body>
   <header class="hero">
     <div class="hero__copy">
-      <p class="eyebrow">Local & client-only</p>
-      <h1>Gain Map Preview</h1>
-      <p class="lede">Compare the bundled JPEG with and without gain applied. Everything stays in your browser.</p>
+      <p class="eyebrow">Python + TensorFlow (local only)</p>
+      <h1>HDR → Tone‑mapped PNG</h1>
+      <p class="lede">The Python script decodes <code>assets/HDR_041_Path_Ref.hdr</code> with TensorFlow, tone‑maps it, and saves <code>generated/hdr.png</code>. This page simply displays that PNG.</p>
       <div class="chips">
-        <span id="hdr-support" class="chip">Checking HDR support…</span>
-        <span id="gamut" class="chip">Display gamut: …</span>
+        <span class="chip">Run: <code>python3 serve.py</code></span>
+        <span class="chip">Open: <code>http://localhost:8000</code></span>
       </div>
     </div>
   </header>
 
   <main class="shell">
-    <section class="card" id="gainShell">
-      <div class="player-meta">
-        <p id="gainFileInfo" class="meta-line"></p>
-        <p id="gainNote" class="meta-line note"></p>
-      </div>
+    <section class="card image-frame">
+      <img id="hdrImage" src="generated/hdr.png" alt="Tone-mapped HDR preview" style="max-width: 100%; max-height: 80vh; display: block;" />
+    </section>
 
-      <div class="compare-frame" id="gainFrame">
-        <canvas id="gainBase" class="gain-base"></canvas>
-        <canvas id="gainBoost" class="gain-boost"></canvas>
-        <input id="gainSlider" class="compare-slider" type="range" min="0" max="100" value="50" aria-label="Reveal gain-mapped image" />
-      </div>
-
-      <div class="control-row">
-        <label class="toggle">
-          <input id="enableGain" type="checkbox" checked />
-          <span>Apply gain map</span>
-        </label>
-        <button id="resetGain" type="button">Reset sample</button>
-      </div>
+    <section class="card">
+      <h2 style="margin-top: 0;">How to run</h2>
+      <ol>
+        <li>Install TensorFlow CPU in your Python 3.12 environment: <code>pip install tensorflow-cpu</code>.</li>
+        <li>From the repo root, run <code>python3 serve.py</code>.</li>
+        <li>Open <code>http://localhost:8000</code> in a browser; the script renders <code>generated/hdr.png</code> on start.</li>
+      </ol>
+      <p class="note">If the image does not appear, check the terminal for TensorFlow or file errors. The server rebuilds the PNG each time it starts.</p>
     </section>
   </main>
-
-  <script type="module" src="./scripts/app.js"></script>
 </body>
 </html>
