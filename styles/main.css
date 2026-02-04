@@ -68,21 +68,21 @@ h1 {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   overflow: hidden;
-  min-height: 240px;
-  aspect-ratio: var(--aspect, 16 / 9);
+  min-height: 260px;
+  aspect-ratio: 16 / 9;
   width: 100%;
   max-height: 80vh;
 }
 
-.compare-frame canvas {
+.compare-frame .layer {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  image-rendering: auto;
+  object-fit: contain;
 }
 
-.gain-boost { clip-path: inset(0 50% 0 0); transition: clip-path 0.2s ease; }
+.compare-frame .boosted { clip-path: inset(0 50% 0 0); transition: clip-path 0.2s ease; }
 
 .compare-slider {
   position: absolute;
@@ -183,6 +183,56 @@ canvas#imageCanvas {
   max-height: 80vh;
   display: block;
   background: #05070c;
+}
+
+.compare-frame {
+  position: relative;
+  background: #05070c;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 260px;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-height: 80vh;
+}
+
+.compare-frame .layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.compare-frame .boosted { clip-path: inset(0 50% 0 0); transition: clip-path 0.2s ease; }
+
+.compare-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.compare-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 6px;
+  height: 100%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px #000, 0 0 12px rgba(125, 211, 252, 0.6);
+  border-radius: 2px;
+}
+
+.compare-slider::-moz-range-thumb {
+  width: 6px;
+  height: 100%;
+  background: var(--accent);
+  border: none;
+  box-shadow: 0 0 0 1px #000, 0 0 12px rgba(125, 211, 252, 0.6);
+  border-radius: 2px;
 }
 
 @media (max-width: 640px) {
