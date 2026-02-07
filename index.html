@@ -49,9 +49,21 @@
       position: relative;
       width: 100%;
       max-width: 900px;
+      min-height: 400px;
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .comparison__height-ref {
+      width: 100%;
+      line-height: 0;
+    }
+
+    .comparison__height-ref img {
+      width: 100%;
+      height: auto;
+      display: block;
     }
 
     .comparison__layer {
@@ -60,6 +72,11 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      pointer-events: none;
+    }
+
+    .comparison__layer .comparison__clip {
+      pointer-events: auto;
     }
 
     .comparison__layer img {
@@ -69,16 +86,12 @@
       display: block;
     }
 
-    .comparison__layer--sdr img {
-      filter: contrast(0.92) brightness(0.97) saturate(0.95);
+    .comparison__layer--sdr {
+      z-index: 0;
     }
 
     .comparison__layer--hdr {
       z-index: 1;
-    }
-
-    .comparison__layer--sdr {
-      z-index: 0;
     }
 
     .comparison__layer--hdr .comparison__clip {
@@ -187,6 +200,16 @@
     .comparison.is-loading .loading {
       display: flex;
     }
+
+    .loading.error {
+      color: #f87171;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .loading.hide {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -196,9 +219,13 @@
   <div class="comparison is-loading" id="comparison">
     <div class="loading" id="loading">Loading…</div>
 
+    <div class="comparison__height-ref">
+      <img src="hdr_photo.jpg" alt="" id="heightRefImg">
+    </div>
+
     <div class="comparison__layer comparison__layer--sdr">
       <div class="comparison__clip">
-        <img src="hdr_photo.jpg" alt="SDR version">
+        <img src="sdr_photo.jpg" alt="SDR version" id="sdrImage">
       </div>
     </div>
 
@@ -255,9 +282,26 @@
         else if (e.key === 'ArrowRight') { e.preventDefault(); setSplit(split + step); }
       });
 
-      hdrImage.addEventListener('load', function () {
-        comparison.classList.remove('is-loading');
-      });
+      var sdrImage = document.getElementById('sdrImage');
+      var loaded = { hdr: false, sdr: false };
+
+      function maybeShow() {
+        if (loaded.hdr && loaded.sdr) {
+          comparison.classList.remove('is-loading');
+          loading.classList.add('hide');
+        }
+      }
+
+      function showError(msg) {
+        loading.textContent = msg || 'Could not load photos. Keep index.html, hdr_photo.jpg and sdr_photo.jpg in the same folder.';
+        loading.classList.add('error');
+      }
+
+      hdrImage.addEventListener('load', function () { loaded.hdr = true; maybeShow(); });
+      hdrImage.addEventListener('error', function () { showError('Could not load hdr_photo.jpg'); });
+      sdrImage.addEventListener('load', function () { loaded.sdr = true; maybeShow(); });
+      sdrImage.addEventListener('error', function () { showError('Could not load sdr_photo.jpg'); });
+      document.getElementById('heightRefImg').addEventListener('error', function () { showError('Could not load hdr_photo.jpg'); });
     })();
   </script>
 </body>
