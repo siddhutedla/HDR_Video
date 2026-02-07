@@ -19,24 +19,13 @@
     </div>
   </header>
 
-  <main class="shell">
-    <section class="card compare-frame" id="sliderShell">
-      <img id="sdr" class="layer base" src="generated/base.png" alt="SDR base" />
-      <img id="hdr" class="layer boosted" src="generated/hdr.png" alt="HDR (gain applied)" />
-      <input id="slider" class="compare-slider" type="range" min="0" max="100" value="50" aria-label="Reveal HDR gain map" />
-    </section>
-
+  <main class="shell shell--single">
     <section class="card">
-      <h2 style="margin-top: 0;">How to run</h2>
-      <ol>
-        <li>Install TensorFlow CPU: <code>pip install tensorflow-cpu</code>.</li>
-        <li>Run the pipeline + server: <code>python3 serve.py</code>.</li>
-        <li>Open <code>http://localhost:8000</code>. Move the slider to compare SDR base vs HDR (gain applied).</li>
-      </ol>
-      <p class="note">Files: <code>generated/base.png</code>, <code>generated/hdr.png</code>, <code>generated/gain.png</code>, <code>generated/boosted.png</code> (boosted ≈ hdr for verification).</p>
-      <div class="image-frame" style="margin-top:12px;">
-        <img src="generated/gain.png" alt="Gain map visualization" style="width: 100%; max-width: 420px; display: block;" />
+      <div class="compare-frame" id="sliderShell">
+        <img id="sdr" class="layer base" src="generated/base.png" alt="SDR base" />
+        <img id="hdr" class="layer boosted" src="generated/hdr.png" alt="HDR (gain applied)" />
       </div>
+      <input id="slider" class="compare-slider" type="range" min="0" max="100" value="50" aria-label="Reveal HDR gain map" />
     </section>
   </main>
   <script>

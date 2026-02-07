@@ -27,7 +27,7 @@ ORIG_REPO = REPO_ROOT / "originals"
 ORIG_DIR = ORIG_REPO / "Originals"
 
 # Choose which numbered sample to use (01–10). Set UHD_SAMPLE env or edit default.
-SAMPLE_ID = os.environ.get("UHD_SAMPLE", "01")
+SAMPLE_ID = os.environ.get("UHD_SAMPLE", "07")
 HDR_SRC = ORIG_DIR / f"Ultra_HDR_Samples_Originals_{SAMPLE_ID}.jpg"
 
 GENERATED_DIR = REPO_ROOT / "generated"
@@ -135,9 +135,7 @@ def build_images() -> None:
     }}
     h1 {{ margin: 0 0 10px; }}
     .shell {{
-      display: grid;
-      gap: 16px;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      max-width: 900px;
     }}
     .card {{
       background: var(--panel);
@@ -161,52 +159,55 @@ def build_images() -> None:
     }}
     .boosted {{ clip-path: inset(0 50% 0 0); transition: clip-path 0.2s ease; }}
     .slider {{
-      position: absolute;
-      inset: 0;
+      display: block;
       width: 100%;
-      height: 100%;
+      margin-top: 12px;
+      height: 24px;
       appearance: none;
       background: transparent;
-      cursor: ew-resize;
+      cursor: pointer;
+    }}
+    .slider::-webkit-slider-runnable-track {{
+      height: 6px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
     }}
     .slider::-webkit-slider-thumb {{
       appearance: none;
-      width: 6px; height: 100%;
+      width: 18px; height: 18px;
+      margin-top: -6px;
       background: var(--accent);
       box-shadow: 0 0 0 1px #000, 0 0 12px rgba(125, 211, 252, 0.6);
-      border-radius: 2px;
+      border-radius: 50%;
+      cursor: ew-resize;
+    }}
+    .slider::-moz-range-track {{
+      height: 6px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
     }}
     .slider::-moz-range-thumb {{
-      width: 6px; height: 100%;
+      width: 18px; height: 18px;
       background: var(--accent);
       border: none;
       box-shadow: 0 0 0 1px #000, 0 0 12px rgba(125, 211, 252, 0.6);
-      border-radius: 2px;
-    }}
-    img.gain {{
-      width: 100%;
-      height: auto;
-      display: block;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: #05070c;
+      border-radius: 50%;
+      cursor: ew-resize;
     }}
   </style>
 </head>
 <body>
   <h1>Ultra HDR sample {SAMPLE_ID}</h1>
-  <p>Slider compares SDR base (left) vs HDR (gain applied, right). Gain map preview below. Exposure shift uses <code>clip((im*(2**ev))*255,0,255)</code> with EV={EV_BOOST:+.2f}. Built by Python + TensorFlow; no external assets.</p>
+  <p>Slider compares SDR base (left) vs HDR (gain applied, right). EV={EV_BOOST:+.2f}.</p>
   <div class="shell">
     <div class="card">
       <div class="compare">
         <img class="layer" src="data:image/png;base64,{b64(BASE_PATH)}" alt="SDR base">
         <img id="hdr" class="layer boosted" src="data:image/png;base64,{b64(HDR_PATH)}" alt="HDR gain applied">
-        <input id="slider" class="slider" type="range" min="0" max="100" value="50" aria-label="Reveal HDR gain">
       </div>
-    </div>
-    <div class="card">
-      <h3 style="margin-top:0;">Gain map preview</h3>
-      <img class="gain" src="data:image/png;base64,{b64(GAIN_PATH)}" alt="Gain map">
+      <input id="slider" class="slider" type="range" min="0" max="100" value="50" aria-label="Reveal HDR gain">
     </div>
   </div>
   <script>
