@@ -1,42 +1,264 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TensorFlow Ultra HDR Splitter</title>
-  <link rel="stylesheet" href="./styles/main.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HDR vs SDR Comparison</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0c0c0e;
+      --surface: #16161a;
+      --text: #e4e4e7;
+      --muted: #71717a;
+      --accent: #7c3aed;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.875rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .comparison {
+      position: relative;
+      width: 100%;
+      max-width: 900px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .comparison__layer {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .comparison__layer img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .comparison__layer--sdr img {
+      filter: contrast(0.92) brightness(0.97) saturate(0.95);
+    }
+
+    .comparison__layer--hdr {
+      z-index: 1;
+    }
+
+    .comparison__layer--sdr {
+      z-index: 0;
+    }
+
+    .comparison__layer--hdr .comparison__clip {
+      clip-path: inset(0 calc(100% - var(--split, 50%)) 0 0);
+    }
+
+    .comparison__clip {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .comparison__clip img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .comparison__slider {
+      position: absolute;
+      top: 0;
+      left: var(--split, 50%);
+      width: 4px;
+      height: 100%;
+      margin-left: -2px;
+      z-index: 2;
+      cursor: ew-resize;
+    }
+
+    .comparison__slider::before {
+      content: '';
+      position: absolute;
+      inset: -12px -4px;
+    }
+
+    .comparison__slider-line {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #fff;
+      transform: translateX(-50%);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+    }
+
+    .comparison__slider-thumb {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 40px;
+      height: 40px;
+      margin: -20px 0 0 -20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .comparison__slider-thumb svg {
+      width: 20px;
+      height: 20px;
+      opacity: 0.8;
+    }
+
+    .labels {
+      display: flex;
+      justify-content: space-between;
+      max-width: 900px;
+      width: 100%;
+      margin-top: 0.75rem;
+      padding: 0 4px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .labels span:first-child { color: #a78bfa; }
+    .labels span:last-child { color: #94a3b8; }
+
+    .loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+
+    .comparison .loading {
+      display: none;
+    }
+
+    .comparison.is-loading .comparison__layer {
+      visibility: hidden;
+    }
+
+    .comparison.is-loading .loading {
+      display: flex;
+    }
+  </style>
 </head>
 <body>
-  <header class="hero">
-    <div class="hero__copy">
-      <p class="eyebrow">Python + TensorFlow (local only)</p>
-      <h1>Ultra HDR Gain Map Split</h1>
-      <p class="lede">Pulls a sample from the <code>Ultra_HDR_Samples</code> repo, separates the gain map with TensorFlow, and lets you compare SDR base vs HDR (gain applied).</p>
-      <div class="chips">
-        <span class="chip">Run: <code>python3 serve.py</code></span>
-        <span class="chip">Open: <code>http://localhost:8000</code></span>
+  <h1>HDR vs SDR</h1>
+  <p class="subtitle">Drag the slider to compare</p>
+
+  <div class="comparison is-loading" id="comparison">
+    <div class="loading" id="loading">Loading…</div>
+
+    <div class="comparison__layer comparison__layer--sdr">
+      <div class="comparison__clip">
+        <img src="hdr_photo.jpg" alt="SDR version">
       </div>
     </div>
-  </header>
 
-  <main class="shell shell--single">
-    <section class="card">
-      <div class="compare-frame" id="sliderShell">
-        <img id="sdr" class="layer base" src="generated/base.png" alt="SDR base" />
-        <img id="hdr" class="layer boosted" src="generated/hdr.png" alt="HDR (gain applied)" />
+    <div class="comparison__layer comparison__layer--hdr">
+      <div class="comparison__clip">
+        <img id="hdrImage" src="hdr_photo.jpg" alt="HDR version">
       </div>
-      <input id="slider" class="compare-slider" type="range" min="0" max="100" value="50" aria-label="Reveal HDR gain map" />
-    </section>
-  </main>
+    </div>
+
+    <div class="comparison__slider" id="slider" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">
+      <span class="comparison__slider-line"></span>
+      <span class="comparison__slider-thumb">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5l5 7-5 7"/><path d="M15 5l5 7-5 7"/></svg>
+      </span>
+    </div>
+  </div>
+
+  <div class="labels">
+    <span>HDR</span>
+    <span>SDR</span>
+  </div>
+
   <script>
-    const boosted = document.getElementById('hdr');
-    const slider = document.getElementById('slider');
-    function updateClip() {
-      const pct = 100 - Number(slider.value);
-      boosted.style.clipPath = `inset(0 ${pct}% 0 0)`;
-    }
-    slider.addEventListener('input', updateClip);
-    updateClip();
+    (function () {
+      var comparison = document.getElementById('comparison');
+      var loading = document.getElementById('loading');
+      var hdrImage = document.getElementById('hdrImage');
+      var slider = document.getElementById('slider');
+      var split = 50;
+
+      function setSplit(value) {
+        split = Math.max(0, Math.min(100, value));
+        comparison.style.setProperty('--split', split + '%');
+        slider.setAttribute('aria-valuenow', Math.round(split));
+      }
+
+      slider.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        function move(ev) {
+          var rect = comparison.getBoundingClientRect();
+          setSplit(((ev.clientX - rect.left) / rect.width) * 100);
+        }
+        move(e);
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', function up() {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+        });
+      });
+
+      slider.addEventListener('keydown', function (e) {
+        var step = e.shiftKey ? 10 : 2;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); setSplit(split - step); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); setSplit(split + step); }
+      });
+
+      hdrImage.addEventListener('load', function () {
+        comparison.classList.remove('is-loading');
+      });
+    })();
   </script>
 </body>
 </html>
