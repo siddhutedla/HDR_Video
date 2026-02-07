@@ -32,6 +32,81 @@
       padding: 1.5rem;
     }
 
+    .main {
+      display: flex;
+      align-items: stretch;
+      gap: 1.5rem;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    .comparison-wrap {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .controls-side {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 0;
+    }
+
+    .controls-side__label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .controls-side__slider-wrap {
+      flex: 1;
+      min-height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .controls-side input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 200px;
+      height: 6px;
+      background: var(--surface);
+      border-radius: 3px;
+      transform: rotate(-90deg);
+      transform-origin: center;
+    }
+
+    .controls-side input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 0 2px var(--bg);
+    }
+
+    .controls-side input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 0 2px var(--bg);
+    }
+
+    .controls-side__value {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
     h1 {
       font-size: 1.25rem;
       font-weight: 600;
@@ -50,6 +125,7 @@
       width: 100%;
       max-width: 900px;
       min-height: 400px;
+      filter: brightness(var(--exposure, 1));
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
@@ -216,36 +292,48 @@
   <h1>HDR vs SDR</h1>
   <p class="subtitle">Drag the slider to compare</p>
 
-  <div class="comparison is-loading" id="comparison">
-    <div class="loading" id="loading">Loading…</div>
+  <div class="main">
+    <div class="comparison-wrap">
+      <div class="comparison is-loading" id="comparison">
+        <div class="loading" id="loading">Loading…</div>
 
-    <div class="comparison__height-ref">
-      <img src="hdr_photo.jpg" alt="" id="heightRefImg">
-    </div>
+        <div class="comparison__height-ref">
+          <img src="hdr_photo.jpg" alt="" id="heightRefImg">
+        </div>
 
-    <div class="comparison__layer comparison__layer--sdr">
-      <div class="comparison__clip">
-        <img src="sdr_photo.jpg" alt="SDR version" id="sdrImage">
+        <div class="comparison__layer comparison__layer--sdr">
+          <div class="comparison__clip">
+            <img src="sdr_photo.jpg" alt="SDR version" id="sdrImage">
+          </div>
+        </div>
+
+        <div class="comparison__layer comparison__layer--hdr">
+          <div class="comparison__clip">
+            <img id="hdrImage" src="hdr_photo.jpg" alt="HDR version">
+          </div>
+        </div>
+
+        <div class="comparison__slider" id="slider" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">
+          <span class="comparison__slider-line"></span>
+          <span class="comparison__slider-thumb">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5l5 7-5 7"/><path d="M15 5l5 7-5 7"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="labels">
+        <span>HDR</span>
+        <span>SDR</span>
       </div>
     </div>
 
-    <div class="comparison__layer comparison__layer--hdr">
-      <div class="comparison__clip">
-        <img id="hdrImage" src="hdr_photo.jpg" alt="HDR version">
-      </div>
+    <aside class="controls-side">
+    <span class="controls-side__label">Exposure</span>
+    <div class="controls-side__slider-wrap">
+      <input type="range" id="exposureSlider" min="25" max="200" value="100" title="Exposure">
     </div>
-
-    <div class="comparison__slider" id="slider" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">
-      <span class="comparison__slider-line"></span>
-      <span class="comparison__slider-thumb">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5l5 7-5 7"/><path d="M15 5l5 7-5 7"/></svg>
-      </span>
-    </div>
-  </div>
-
-  <div class="labels">
-    <span>HDR</span>
-    <span>SDR</span>
+    <span class="controls-side__value" id="exposureValue">100%</span>
+  </aside>
   </div>
 
   <script>
@@ -283,13 +371,23 @@
       });
 
       var sdrImage = document.getElementById('sdrImage');
-      var loaded = { hdr: false, sdr: false };
+      var exposureSlider = document.getElementById('exposureSlider');
+      var exposureValue = document.getElementById('exposureValue');
 
-      function maybeShow() {
-        if (loaded.hdr && loaded.sdr) {
-          comparison.classList.remove('is-loading');
-          loading.classList.add('hide');
-        }
+      function setExposure(value) {
+        var pct = Math.max(25, Math.min(200, Number(value)));
+        comparison.style.setProperty('--exposure', pct / 100);
+        exposureSlider.value = pct;
+        exposureValue.textContent = Math.round(pct) + '%';
+      }
+
+      exposureSlider.addEventListener('input', function () {
+        setExposure(exposureSlider.value);
+      });
+
+      function showComparison() {
+        comparison.classList.remove('is-loading');
+        loading.classList.add('hide');
       }
 
       function showError(msg) {
@@ -297,11 +395,13 @@
         loading.classList.add('error');
       }
 
-      hdrImage.addEventListener('load', function () { loaded.hdr = true; maybeShow(); });
+      hdrImage.addEventListener('load', showComparison);
       hdrImage.addEventListener('error', function () { showError('Could not load hdr_photo.jpg'); });
-      sdrImage.addEventListener('load', function () { loaded.sdr = true; maybeShow(); });
+      sdrImage.addEventListener('load', showComparison);
       sdrImage.addEventListener('error', function () { showError('Could not load sdr_photo.jpg'); });
       document.getElementById('heightRefImg').addEventListener('error', function () { showError('Could not load hdr_photo.jpg'); });
+
+      if (hdrImage.complete || sdrImage.complete) showComparison();
     })();
   </script>
 </body>
