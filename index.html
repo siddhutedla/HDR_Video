@@ -293,6 +293,13 @@
   <p class="subtitle">Drag the slider to compare</p>
 
   <div class="main">
+    <aside class="controls-side">
+    <span class="controls-side__label">Exposure (EV)</span>
+    <div class="controls-side__slider-wrap">
+      <input type="range" id="exposureSlider" min="0" max="200" value="100" title="Exposure (EV)">
+    </div>
+    <span class="controls-side__value" id="exposureValue">0.0 EV</span>
+  </aside>
     <div class="comparison-wrap">
       <div class="comparison is-loading" id="comparison">
         <div class="loading" id="loading">Loading…</div>
@@ -326,14 +333,6 @@
         <span>SDR</span>
       </div>
     </div>
-
-    <aside class="controls-side">
-    <span class="controls-side__label">Exposure</span>
-    <div class="controls-side__slider-wrap">
-      <input type="range" id="exposureSlider" min="25" max="200" value="100" title="Exposure">
-    </div>
-    <span class="controls-side__value" id="exposureValue">100%</span>
-  </aside>
   </div>
 
   <script>
@@ -374,11 +373,15 @@
       var exposureSlider = document.getElementById('exposureSlider');
       var exposureValue = document.getElementById('exposureValue');
 
-      function setExposure(value) {
-        var pct = Math.max(25, Math.min(200, Number(value)));
-        comparison.style.setProperty('--exposure', pct / 100);
-        exposureSlider.value = pct;
-        exposureValue.textContent = Math.round(pct) + '%';
+      // Slider 0..200 maps to EV -2..+2; 100 = 0 EV (normal). multiplier = 2^EV
+      function setExposure(sliderVal) {
+        var raw = Math.max(0, Math.min(200, Number(sliderVal)));
+        var ev = (raw - 100) / 50;
+        var multiplier = Math.pow(2, ev);
+        comparison.style.setProperty('--exposure', multiplier);
+        exposureSlider.value = raw;
+        var evText = ev >= 0 ? '+' + ev.toFixed(1) : ev.toFixed(1);
+        exposureValue.textContent = evText + ' EV';
       }
 
       exposureSlider.addEventListener('input', function () {
