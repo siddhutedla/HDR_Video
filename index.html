@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HDR vs SDR Comparison</title>
+  <title>HDR vs SDR Comparison (DISPLAY ADJUSTED)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
@@ -40,11 +40,16 @@
       max-width: 960px;
     }
 
-    .comparison-wrap {
+    .comparison-wrap,
+    .scene-content {
       flex: 1;
       min-width: 0;
       display: flex;
       flex-direction: column;
+    }
+
+    .scene-content {
+      /* Exposure applied in HDR tone mapping, not CSS */
     }
 
     .controls-side {
@@ -286,20 +291,81 @@
     .loading.hide {
       display: none;
     }
+
+    .tabs {
+      display: flex;
+      gap: 0.25rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--surface);
+      padding-bottom: 0;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      font-family: inherit;
+      margin-bottom: -1px;
+    }
+
+    .tab:hover {
+      color: var(--text);
+    }
+
+    .tab.is-active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-panel {
+      display: none;
+      width: 100%;
+    }
+
+    .tab-panel.is-active {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .scene-hdr-wrap {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      width: 100%;
+      max-width: 900px;
+      min-height: 400px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .scene-hdr-wrap img {
+      max-width: 100%;
+      width: 100%;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
   </style>
 </head>
 <body>
-  <h1>HDR vs SDR</h1>
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" role="tab" aria-selected="true" aria-controls="panel-display" id="tab-display">HDR vs SDR (DISPLAY ADJUSTED)</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="panel-scene" id="tab-scene">.hdr Photo (SCENE ADJUSTED)</button>
+  </nav>
+
+  <section class="tab-panel is-active" id="panel-display" role="tabpanel">
+  <h1>HDR vs SDR (DISPLAY ADJUSTED)</h1>
   <p class="subtitle">Drag the slider to compare</p>
 
   <div class="main">
-    <aside class="controls-side">
-    <span class="controls-side__label">Exposure (EV)</span>
-    <div class="controls-side__slider-wrap">
-      <input type="range" id="exposureSlider" min="0" max="200" value="100" title="Exposure (EV)">
-    </div>
-    <span class="controls-side__value" id="exposureValue">0.0 EV</span>
-  </aside>
     <div class="comparison-wrap">
       <div class="comparison is-loading" id="comparison">
         <div class="loading" id="loading">Loading…</div>
@@ -334,9 +400,47 @@
       </div>
     </div>
   </div>
+  </section>
+
+  <section class="tab-panel" id="panel-scene" role="tabpanel" aria-labelledby="tab-scene">
+    <div class="main">
+      <aside class="controls-side">
+        <span class="controls-side__label">Exposure (EV)</span>
+        <div class="controls-side__slider-wrap">
+          <input type="range" id="exposureSlider" min="0" max="200" value="100" title="Exposure (EV)">
+        </div>
+        <span class="controls-side__value" id="exposureValue">0.0 EV</span>
+      </aside>
+      <div class="scene-content" id="sceneContent" style="filter: brightness(var(--scene-exposure, 1));">
+        <div class="scene-hdr-wrap" id="sceneHdrWrap">
+          <img src="hdr_scene.hdr" alt="Scene adjusted HDR" id="sceneHdrImg">
+        </div>
+      </div>
+    </div>
+  </section>
 
   <script>
     (function () {
+      var tabDisplay = document.getElementById('tab-display');
+      var tabScene = document.getElementById('tab-scene');
+      var panelDisplay = document.getElementById('panel-display');
+      var panelScene = document.getElementById('panel-scene');
+
+      function activateTab(tab, panel) {
+        tabDisplay.classList.remove('is-active');
+        tabScene.classList.remove('is-active');
+        panelDisplay.classList.remove('is-active');
+        panelScene.classList.remove('is-active');
+        tabDisplay.setAttribute('aria-selected', 'false');
+        tabScene.setAttribute('aria-selected', 'false');
+        tab.classList.add('is-active');
+        panel.classList.add('is-active');
+        tab.setAttribute('aria-selected', 'true');
+      }
+
+      tabDisplay.addEventListener('click', function () { activateTab(tabDisplay, panelDisplay); });
+      tabScene.addEventListener('click', function () { activateTab(tabScene, panelScene); });
+
       var comparison = document.getElementById('comparison');
       var loading = document.getElementById('loading');
       var hdrImage = document.getElementById('hdrImage');
@@ -373,20 +477,19 @@
       var exposureSlider = document.getElementById('exposureSlider');
       var exposureValue = document.getElementById('exposureValue');
 
-      // Slider 0..200 maps to EV -2..+2; 100 = 0 EV (normal). multiplier = 2^EV
+      var sceneContent = document.getElementById('sceneContent');
+
       function setExposure(sliderVal) {
         var raw = Math.max(0, Math.min(200, Number(sliderVal)));
         var ev = (raw - 100) / 50;
         var multiplier = Math.pow(2, ev);
-        comparison.style.setProperty('--exposure', multiplier);
+        sceneContent.style.setProperty('--scene-exposure', multiplier);
         exposureSlider.value = raw;
         var evText = ev >= 0 ? '+' + ev.toFixed(1) : ev.toFixed(1);
         exposureValue.textContent = evText + ' EV';
       }
 
-      exposureSlider.addEventListener('input', function () {
-        setExposure(exposureSlider.value);
-      });
+      exposureSlider.addEventListener('input', function () { setExposure(exposureSlider.value); });
 
       function showComparison() {
         comparison.classList.remove('is-loading');
