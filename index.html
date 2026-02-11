@@ -354,45 +354,6 @@
       object-fit: contain;
     }
 
-    .scene-content--video .scene-hdr-wrap {
-      position: relative;
-    }
-
-    .scene-content--video .video-frame {
-      display: none;
-      max-width: 100%;
-      width: 100%;
-      height: auto;
-      object-fit: contain;
-    }
-
-    .scene-content--video .video-frame.is-visible {
-      display: block;
-    }
-
-    .scene-content--video .loading {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .controls-side--playback .video-play-btn {
-      margin-top: 0.5rem;
-    }
-
-    .video-play-btn {
-      padding: 0.5rem 1rem;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 0.875rem;
-      width: 100%;
-    }
   </style>
   <svg style="position:absolute;width:0;height:0" aria-hidden="true">
     <defs>
@@ -401,13 +362,6 @@
           <feFuncR type="table" id="exposureFuncR" tableValues="0 1"/>
           <feFuncG type="table" id="exposureFuncG" tableValues="0 1"/>
           <feFuncB type="table" id="exposureFuncB" tableValues="0 1"/>
-        </feComponentTransfer>
-      </filter>
-      <filter id="videoExposureFilter" color-interpolation-filters="sRGB">
-        <feComponentTransfer>
-          <feFuncR type="table" id="videoExposureFuncR" tableValues="0 1"/>
-          <feFuncG type="table" id="videoExposureFuncG" tableValues="0 1"/>
-          <feFuncB type="table" id="videoExposureFuncB" tableValues="0 1"/>
         </feComponentTransfer>
       </filter>
     </defs>
@@ -479,8 +433,6 @@
   </section>
 
   <section class="tab-panel" id="panel-video" role="tabpanel" aria-labelledby="tab-video">
-    <h1>HDR Video</h1>
-    <p class="subtitle">Frames from hdr_video/ with Reinhard tone mapping</p>
     <div class="main">
       <aside class="controls-side">
         <span class="controls-side__label">Exposure (EV)</span>
@@ -489,36 +441,11 @@
         </div>
         <span class="controls-side__value" id="videoExposureValue">0.0 EV</span>
       </aside>
-      <div class="scene-content scene-content--video" id="videoSceneContent" style="filter: url(#videoExposureFilter);">
+      <div class="scene-content" id="videoSceneContent" style="filter: url(#exposureFilter);">
         <div class="scene-hdr-wrap" id="videoSceneWrap">
-          <div class="loading" id="videoLoading">Loading frames…</div>
-          <img src="hdr_video/frame_0000.hdr" alt="" class="video-frame" data-frame="0">
-          <img src="hdr_video/frame_0001.hdr" alt="" class="video-frame" data-frame="1">
-          <img src="hdr_video/frame_0002.hdr" alt="" class="video-frame" data-frame="2">
-          <img src="hdr_video/frame_0003.hdr" alt="" class="video-frame" data-frame="3">
-          <img src="hdr_video/frame_0004.hdr" alt="" class="video-frame" data-frame="4">
-          <img src="hdr_video/frame_0005.hdr" alt="" class="video-frame" data-frame="5">
-          <img src="hdr_video/frame_0006.hdr" alt="" class="video-frame" data-frame="6">
-          <img src="hdr_video/frame_0007.hdr" alt="" class="video-frame" data-frame="7">
-          <img src="hdr_video/frame_0008.hdr" alt="" class="video-frame" data-frame="8">
-          <img src="hdr_video/frame_0009.hdr" alt="" class="video-frame" data-frame="9">
-          <img src="hdr_video/frame_0010.hdr" alt="" class="video-frame" data-frame="10">
-          <img src="hdr_video/frame_0011.hdr" alt="" class="video-frame" data-frame="11">
-          <img src="hdr_video/frame_0012.hdr" alt="" class="video-frame" data-frame="12">
-          <img src="hdr_video/frame_0013.hdr" alt="" class="video-frame" data-frame="13">
-          <img src="hdr_video/frame_0014.hdr" alt="" class="video-frame" data-frame="14">
-          <img src="hdr_video/frame_0015.hdr" alt="" class="video-frame" data-frame="15">
-          <img src="hdr_video/frame_0016.hdr" alt="" class="video-frame" data-frame="16">
+          <img src="frame_0001.hdr" alt="HDR video frame">
         </div>
       </div>
-      <aside class="controls-side controls-side--playback">
-        <span class="controls-side__label">Playback</span>
-        <div class="controls-side__slider-wrap">
-          <input type="range" id="videoScrubber" min="0" max="16" value="0" title="Frame (0–16)">
-        </div>
-        <span class="controls-side__value" id="videoTime">1 / 17</span>
-        <button type="button" id="videoPlayBtn" class="video-play-btn">Play</button>
-      </aside>
     </div>
   </section>
 
@@ -636,94 +563,24 @@
       if (hdrImage.complete || sdrImage.complete) showComparison();
 
       (function videoModule() {
-        var HDR_FPS = 24;
-        var HDR_FRAME_COUNT = 17;
-        var videoLoading = document.getElementById('videoLoading');
-        var videoPlayBtn = document.getElementById('videoPlayBtn');
-        var videoScrubber = document.getElementById('videoScrubber');
-        var videoTime = document.getElementById('videoTime');
         var videoExposureSlider = document.getElementById('videoExposureSlider');
         var videoExposureValue = document.getElementById('videoExposureValue');
-        var videoExposureFuncR = document.getElementById('videoExposureFuncR');
-        var videoExposureFuncG = document.getElementById('videoExposureFuncG');
-        var videoExposureFuncB = document.getElementById('videoExposureFuncB');
-        var frameImgs = document.querySelectorAll('#videoSceneWrap .video-frame');
-        var currentFrameIndex = 0;
-        var playing = false;
-        var frameStartTime = 0;
-        var animId = null;
-        var loadedCount = 0;
-
-        function showVideoFrame(index) {
-          currentFrameIndex = Math.max(0, Math.min(HDR_FRAME_COUNT - 1, index));
-          for (var i = 0; i < frameImgs.length; i++) {
-            frameImgs[i].classList.toggle('is-visible', parseInt(frameImgs[i].getAttribute('data-frame'), 10) === currentFrameIndex);
-          }
-          videoScrubber.value = currentFrameIndex;
-          videoTime.textContent = (currentFrameIndex + 1) + ' / ' + HDR_FRAME_COUNT;
-        }
 
         function setVideoExposure(sliderVal) {
           var raw = Math.max(0, Math.min(200, Number(sliderVal)));
           var ev = (raw - 100) * 0.08;
           var multiplier = Math.pow(2, ev);
           var table = buildReinhardTable(multiplier);
-          videoExposureFuncR.setAttribute('tableValues', table);
-          videoExposureFuncG.setAttribute('tableValues', table);
-          videoExposureFuncB.setAttribute('tableValues', table);
+          exposureFuncR.setAttribute('tableValues', table);
+          exposureFuncG.setAttribute('tableValues', table);
+          exposureFuncB.setAttribute('tableValues', table);
           videoExposureSlider.value = raw;
           var evText = ev >= 0 ? '+' + ev.toFixed(1) : ev.toFixed(1);
           videoExposureValue.textContent = evText + ' EV';
         }
 
-        function onFrameLoad() {
-          loadedCount++;
-          if (loadedCount === 1) {
-            videoLoading.classList.add('hide');
-            videoScrubber.max = Math.max(0, HDR_FRAME_COUNT - 1);
-            showVideoFrame(0);
-          }
-        }
-
-        function tick(t) {
-          if (!playing) return;
-          var elapsed = (t - frameStartTime) / 1000;
-          var frameIndex = Math.floor(elapsed * HDR_FPS) % HDR_FRAME_COUNT;
-          if (frameIndex !== currentFrameIndex) showVideoFrame(frameIndex);
-          animId = requestAnimationFrame(tick);
-        }
-
-        function play() {
-          if (playing) return;
-          playing = true;
-          frameStartTime = performance.now() - (currentFrameIndex / HDR_FPS) * 1000;
-          videoPlayBtn.textContent = 'Pause';
-          animId = requestAnimationFrame(tick);
-        }
-
-        function pause() {
-          playing = false;
-          if (animId !== null) cancelAnimationFrame(animId);
-          animId = null;
-          videoPlayBtn.textContent = 'Play';
-        }
-
         setVideoExposure(100);
         videoExposureSlider.addEventListener('input', function () { setVideoExposure(videoExposureSlider.value); });
-        videoPlayBtn.addEventListener('click', function () {
-          if (playing) pause(); else play();
-        });
-        videoScrubber.addEventListener('input', function () {
-          var idx = parseInt(videoScrubber.value, 10);
-          if (playing) frameStartTime = performance.now() - (idx / HDR_FPS) * 1000;
-          showVideoFrame(idx);
-        });
-        for (var i = 0; i < frameImgs.length; i++) {
-          frameImgs[i].addEventListener('load', onFrameLoad);
-        }
-        videoScrubber.max = Math.max(0, HDR_FRAME_COUNT - 1);
-        videoTime.textContent = '1 / ' + HDR_FRAME_COUNT;
-        if (frameImgs.length > 0 && frameImgs[0].complete) onFrameLoad();
       })();
     })();
   </script>
