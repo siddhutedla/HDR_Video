@@ -527,7 +527,6 @@
       var panelScene = document.getElementById('panel-scene');
       var panelVideo = document.getElementById('panel-video');
       var syncVideoPlayback = null;
-      var maybePromptVideoFolder = null;
 
       function activateTab(tab, panel) {
         tabDisplay.classList.remove('is-active');
@@ -543,7 +542,6 @@
         panel.classList.add('is-active');
         tab.setAttribute('aria-selected', 'true');
         if (typeof syncVideoPlayback === 'function') syncVideoPlayback();
-        if (panel === panelVideo && typeof maybePromptVideoFolder === 'function') maybePromptVideoFolder();
       }
 
       tabDisplay.addEventListener('click', function () { activateTab(tabDisplay, panelDisplay); });
@@ -655,8 +653,6 @@
         var videoFrameIntervalMs = 1000 / 12;
         var isVideoPlaying = false;
         var videoPausedByUser = false;
-        var videoAutoLoadFailed = false;
-        var videoAutoPrompted = false;
         var supportsFileSystemAccess = typeof window.showDirectoryPicker === 'function' && typeof window.indexedDB !== 'undefined';
 
         function showVideoStatus(message, isError) {
@@ -1086,8 +1082,6 @@
           if (!newFrames || !newFrames.length) throw new Error('No HDR frames found');
           videoFrames = newFrames;
           videoFrameIndex = 0;
-          videoAutoLoadFailed = false;
-          videoAutoPrompted = false;
           renderVideoFrame(videoFrames[videoFrameIndex]);
           hideVideoStatus();
           videoPausedByUser = false;
@@ -1108,12 +1102,6 @@
           }
         }
 
-        function maybePromptVideoFolderFromGesture() {
-          if (!videoAutoLoadFailed || videoFrames.length || videoAutoPrompted) return;
-          videoAutoPrompted = true;
-          promptForFolderAndLoad();
-        }
-
         videoPlayPauseBtn.addEventListener('click', toggleVideoPause);
         videoPickDirBtn.addEventListener('click', promptForFolderAndLoad);
         videoFrameSlider.addEventListener('input', function () {
@@ -1122,7 +1110,6 @@
         videoExposureSlider.addEventListener('input', function () { setVideoExposure(videoExposureSlider.value); });
         document.addEventListener('visibilitychange', syncPlaybackState);
         syncVideoPlayback = syncPlaybackState;
-        maybePromptVideoFolder = maybePromptVideoFolderFromGesture;
         setVideoExposure(100);
         updateVideoTimelineUi();
 
@@ -1131,8 +1118,7 @@
             var frames = await autoLoadVideoFrames();
             await setVideoFramesAndPlay(frames);
           } catch (err) {
-            videoAutoLoadFailed = true;
-            showVideoStatus('Auto-load blocked. Open HDR Video tab and choose folder once, then it will auto-load next time.', true);
+            showVideoStatus('Auto-load blocked. Click "Choose Folder" if needed.', true);
           }
         })();
       })();
