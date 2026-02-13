@@ -354,6 +354,38 @@
       object-fit: contain;
     }
 
+    .scene-hdr-wrap canvas {
+      max-width: 100%;
+      width: 100%;
+      height: auto;
+      display: block;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .video-folder-btn {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      border: 1px solid #2f2f3a;
+      border-radius: 8px;
+      background: #1f1f26;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.75rem;
+      padding: 0.35rem 0.55rem;
+      cursor: pointer;
+      z-index: 3;
+    }
+
+    .video-folder-btn:hover {
+      border-color: #4b5563;
+    }
+
+    .u-hidden {
+      display: none !important;
+    }
+
   </style>
   <svg style="position:absolute;width:0;height:0" aria-hidden="true">
     <defs>
@@ -441,9 +473,12 @@
         </div>
         <span class="controls-side__value" id="videoExposureValue">0.0 EV</span>
       </aside>
-      <div class="scene-content" id="videoSceneContent" style="filter: url(#exposureFilter);">
+      <div class="scene-content" id="videoSceneContent">
         <div class="scene-hdr-wrap" id="videoSceneWrap">
-          <img src="frame_0001.hdr" alt="HDR video frame">
+          <canvas id="videoCanvas" aria-label="HDR video frame"></canvas>
+          <div class="loading" id="videoStatus">Loading HDR frames…</div>
+          <button class="video-folder-btn u-hidden" id="videoFolderBtn" type="button">Load hdr_video Folder</button>
+          <input class="u-hidden" type="file" id="videoFolderInput" webkitdirectory directory multiple accept=".hdr">
         </div>
       </div>
     </div>
@@ -457,6 +492,7 @@
       var panelDisplay = document.getElementById('panel-display');
       var panelScene = document.getElementById('panel-scene');
       var panelVideo = document.getElementById('panel-video');
+      var syncVideoPlayback = null;
 
       function activateTab(tab, panel) {
         tabDisplay.classList.remove('is-active');
@@ -471,6 +507,7 @@
         tab.classList.add('is-active');
         panel.classList.add('is-active');
         tab.setAttribute('aria-selected', 'true');
+        if (typeof syncVideoPlayback === 'function') syncVideoPlayback();
       }
 
       tabDisplay.addEventListener('click', function () { activateTab(tabDisplay, panelDisplay); });
@@ -565,22 +602,333 @@
       (function videoModule() {
         var videoExposureSlider = document.getElementById('videoExposureSlider');
         var videoExposureValue = document.getElementById('videoExposureValue');
+        var videoStatus = document.getElementById('videoStatus');
+        var videoCanvas = document.getElementById('videoCanvas');
+        var videoFolderBtn = document.getElementById('videoFolderBtn');
+        var videoFolderInput = document.getElementById('videoFolderInput');
+        var videoCtx = videoCanvas.getContext('2d');
+        var videoFrames = [];
+        var videoFrameIndex = 0;
+        var videoExposureMultiplier = 1;
+        var videoImageData = null;
+        var videoAnimationId = 0;
+        var videoLastFrameMs = 0;
+        var videoFrameIntervalMs = 1000 / 12;
+        var isVideoPlaying = false;
+
+        function showVideoStatus(message, isError) {
+          videoStatus.textContent = message;
+          videoStatus.classList.remove('hide');
+          if (isError) videoStatus.classList.add('error');
+          else videoStatus.classList.remove('error');
+        }
+
+        function hideVideoStatus() {
+          videoStatus.classList.add('hide');
+          videoStatus.classList.remove('error');
+        }
 
         function setVideoExposure(sliderVal) {
           var raw = Math.max(0, Math.min(200, Number(sliderVal)));
           var ev = (raw - 100) * 0.08;
-          var multiplier = Math.pow(2, ev);
-          var table = buildReinhardTable(multiplier);
-          exposureFuncR.setAttribute('tableValues', table);
-          exposureFuncG.setAttribute('tableValues', table);
-          exposureFuncB.setAttribute('tableValues', table);
+          videoExposureMultiplier = Math.pow(2, ev);
           videoExposureSlider.value = raw;
           var evText = ev >= 0 ? '+' + ev.toFixed(1) : ev.toFixed(1);
           videoExposureValue.textContent = evText + ' EV';
+          if (videoFrames.length) renderVideoFrame(videoFrames[videoFrameIndex]);
         }
 
-        setVideoExposure(100);
+        function readAsciiLine(bytes, state) {
+          var start = state.offset;
+          while (state.offset < bytes.length && bytes[state.offset] !== 10) state.offset += 1;
+          if (state.offset >= bytes.length) return null;
+          var end = state.offset;
+          if (end > start && bytes[end - 1] === 13) end -= 1;
+          var out = '';
+          for (var i = start; i < end; i++) out += String.fromCharCode(bytes[i]);
+          state.offset += 1;
+          return out;
+        }
+
+        function parseRadianceHdr(arrayBuffer) {
+          var bytes = new Uint8Array(arrayBuffer);
+          var state = { offset: 0 };
+          var firstLine = readAsciiLine(bytes, state);
+          if (!firstLine || (firstLine.indexOf('#?RADIANCE') !== 0 && firstLine.indexOf('#?RGBE') !== 0)) {
+            throw new Error('Unsupported HDR header');
+          }
+
+          var line = '';
+          var hasFormat = false;
+          while (true) {
+            line = readAsciiLine(bytes, state);
+            if (line === null) throw new Error('Invalid HDR header');
+            if (line.indexOf('FORMAT=32-bit_rle_rgbe') === 0) hasFormat = true;
+            if (line.trim() === '') break;
+          }
+          if (!hasFormat) throw new Error('Unsupported HDR format');
+
+          do {
+            line = readAsciiLine(bytes, state);
+            if (line === null) throw new Error('Missing HDR resolution');
+          } while (line.trim() === '');
+
+          var match = /^-Y\s+(\d+)\s+\+X\s+(\d+)$/.exec(line.trim());
+          if (!match) throw new Error('Unsupported HDR resolution');
+          var height = Number(match[1]);
+          var width = Number(match[2]);
+
+          var scanline = new Uint8Array(width * 4);
+          var rgb = new Float32Array(width * height * 3);
+
+          for (var y = 0; y < height; y++) {
+            if (state.offset + 4 > bytes.length) throw new Error('Unexpected HDR EOF');
+            var a = bytes[state.offset];
+            var b = bytes[state.offset + 1];
+            var c = bytes[state.offset + 2];
+            var d = bytes[state.offset + 3];
+            if (a !== 2 || b !== 2 || (c & 128)) throw new Error('Unsupported HDR scanline encoding');
+            var scanlineWidth = (c << 8) | d;
+            if (scanlineWidth !== width) throw new Error('HDR scanline width mismatch');
+            state.offset += 4;
+
+            for (var channel = 0; channel < 4; channel++) {
+              var ptr = channel * width;
+              var end = (channel + 1) * width;
+              while (ptr < end) {
+                if (state.offset >= bytes.length) throw new Error('Unexpected HDR EOF');
+                var count = bytes[state.offset++];
+                if (count > 128) {
+                  var runLength = count - 128;
+                  if (runLength <= 0 || ptr + runLength > end || state.offset >= bytes.length) {
+                    throw new Error('Invalid HDR RLE run');
+                  }
+                  var value = bytes[state.offset++];
+                  for (var iRun = 0; iRun < runLength; iRun++) scanline[ptr++] = value;
+                } else {
+                  var literalLength = count;
+                  if (literalLength <= 0 || ptr + literalLength > end || state.offset + literalLength > bytes.length) {
+                    throw new Error('Invalid HDR RLE literal');
+                  }
+                  scanline.set(bytes.subarray(state.offset, state.offset + literalLength), ptr);
+                  state.offset += literalLength;
+                  ptr += literalLength;
+                }
+              }
+            }
+
+            for (var x = 0; x < width; x++) {
+              var srcIdx = x;
+              var e = scanline[srcIdx + width * 3];
+              var dstIdx = (y * width + x) * 3;
+              if (e) {
+                var scale = Math.pow(2, e - 128) / 256;
+                rgb[dstIdx] = scanline[srcIdx] * scale;
+                rgb[dstIdx + 1] = scanline[srcIdx + width] * scale;
+                rgb[dstIdx + 2] = scanline[srcIdx + width * 2] * scale;
+              } else {
+                rgb[dstIdx] = 0;
+                rgb[dstIdx + 1] = 0;
+                rgb[dstIdx + 2] = 0;
+              }
+            }
+          }
+
+          return { width: width, height: height, rgb: rgb };
+        }
+
+        function renderVideoFrame(frame) {
+          if (!frame) return;
+
+          if (videoCanvas.width !== frame.width || videoCanvas.height !== frame.height || !videoImageData) {
+            videoCanvas.width = frame.width;
+            videoCanvas.height = frame.height;
+            videoImageData = videoCtx.createImageData(frame.width, frame.height);
+          }
+
+          var src = frame.rgb;
+          var dst = videoImageData.data;
+          var mult = videoExposureMultiplier;
+          for (var srcIdx = 0, dstIdx = 0; srcIdx < src.length; srcIdx += 3, dstIdx += 4) {
+            var r = src[srcIdx] * mult;
+            var g = src[srcIdx + 1] * mult;
+            var b = src[srcIdx + 2] * mult;
+
+            r = r / (1 + r);
+            g = g / (1 + g);
+            b = b / (1 + b);
+
+            dst[dstIdx] = Math.max(0, Math.min(255, Math.round(r * 255)));
+            dst[dstIdx + 1] = Math.max(0, Math.min(255, Math.round(g * 255)));
+            dst[dstIdx + 2] = Math.max(0, Math.min(255, Math.round(b * 255)));
+            dst[dstIdx + 3] = 255;
+          }
+
+          videoCtx.putImageData(videoImageData, 0, 0);
+        }
+
+        function shouldPlayVideo() {
+          return !document.hidden && panelVideo.classList.contains('is-active') && videoFrames.length > 1;
+        }
+
+        function stopVideoPlayback() {
+          isVideoPlaying = false;
+          if (videoAnimationId) cancelAnimationFrame(videoAnimationId);
+          videoAnimationId = 0;
+        }
+
+        function videoPlaybackLoop(timestampMs) {
+          if (!isVideoPlaying) return;
+          if (!videoLastFrameMs) videoLastFrameMs = timestampMs;
+          if (timestampMs - videoLastFrameMs >= videoFrameIntervalMs) {
+            videoLastFrameMs = timestampMs;
+            videoFrameIndex = (videoFrameIndex + 1) % videoFrames.length;
+            renderVideoFrame(videoFrames[videoFrameIndex]);
+          }
+          videoAnimationId = requestAnimationFrame(videoPlaybackLoop);
+        }
+
+        function syncPlaybackState() {
+          if (shouldPlayVideo()) {
+            if (!isVideoPlaying) {
+              isVideoPlaying = true;
+              videoLastFrameMs = 0;
+              videoAnimationId = requestAnimationFrame(videoPlaybackLoop);
+            }
+          } else {
+            stopVideoPlayback();
+          }
+        }
+
+        function loadArrayBufferFromUrl(url) {
+          if (window.fetch) {
+            return fetch(url).then(function (response) {
+              if (!response.ok && response.status !== 0) {
+                throw new Error('HTTP ' + response.status);
+              }
+              return response.arrayBuffer();
+            }).catch(function () {
+              return new Promise(function (resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+                xhr.responseType = 'arraybuffer';
+                xhr.onload = function () {
+                  if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
+                    if (xhr.response) resolve(xhr.response);
+                    else reject(new Error('Empty response for ' + url));
+                  } else {
+                    reject(new Error('HTTP ' + xhr.status));
+                  }
+                };
+                xhr.onerror = function () { reject(new Error('Network error for ' + url)); };
+                xhr.send();
+              });
+            });
+          }
+
+          return new Promise(function (resolve, reject) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', url, true);
+            xhr.responseType = 'arraybuffer';
+            xhr.onload = function () {
+              if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
+                if (xhr.response) resolve(xhr.response);
+                else reject(new Error('Empty response for ' + url));
+              } else {
+                reject(new Error('HTTP ' + xhr.status));
+              }
+            };
+            xhr.onerror = function () { reject(new Error('Network error for ' + url)); };
+            xhr.send();
+          });
+        }
+
+        function readFileAsArrayBuffer(file) {
+          if (file.arrayBuffer) return file.arrayBuffer();
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(reader.result); };
+            reader.onerror = function () { reject(new Error('Failed to read ' + file.name)); };
+            reader.readAsArrayBuffer(file);
+          });
+        }
+
+        async function loadSequentialVideoFrames(folder) {
+          var loaded = [];
+          for (var i = 0; i < 2000; i++) {
+            var index = String(i).padStart(4, '0');
+            var fileName = 'frame_' + index + '.hdr';
+            var fullPath = folder + '/' + fileName;
+            try {
+              showVideoStatus('Loading ' + fileName + '…', false);
+              var buffer = await loadArrayBufferFromUrl(fullPath);
+              loaded.push(parseRadianceHdr(buffer));
+            } catch (err) {
+              if (loaded.length > 0) break;
+              throw err;
+            }
+          }
+          return loaded;
+        }
+
+        async function loadVideoFramesFromFileList(fileList) {
+          var hdrFiles = Array.prototype.filter.call(fileList, function (file) {
+            return /\.hdr$/i.test(file.name);
+          });
+          hdrFiles.sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }); });
+          if (!hdrFiles.length) throw new Error('No .hdr files selected');
+
+          var loaded = [];
+          for (var i = 0; i < hdrFiles.length; i++) {
+            showVideoStatus('Loading ' + hdrFiles[i].name + '…', false);
+            var buffer = await readFileAsArrayBuffer(hdrFiles[i]);
+            loaded.push(parseRadianceHdr(buffer));
+          }
+          return loaded;
+        }
+
+        async function setVideoFramesAndPlay(newFrames) {
+          if (!newFrames || !newFrames.length) throw new Error('No HDR frames found');
+          videoFrames = newFrames;
+          videoFrameIndex = 0;
+          renderVideoFrame(videoFrames[videoFrameIndex]);
+          hideVideoStatus();
+          videoFolderBtn.classList.add('u-hidden');
+          syncPlaybackState();
+        }
+
+        videoFolderBtn.addEventListener('click', function () {
+          videoFolderInput.click();
+        });
+
+        videoFolderInput.addEventListener('change', async function () {
+          if (!videoFolderInput.files || !videoFolderInput.files.length) return;
+          try {
+            videoFolderBtn.disabled = true;
+            var selectedFrames = await loadVideoFramesFromFileList(videoFolderInput.files);
+            await setVideoFramesAndPlay(selectedFrames);
+          } catch (err) {
+            showVideoStatus('Could not load selected HDR files: ' + err.message, true);
+          } finally {
+            videoFolderBtn.disabled = false;
+            videoFolderInput.value = '';
+          }
+        });
+
         videoExposureSlider.addEventListener('input', function () { setVideoExposure(videoExposureSlider.value); });
+        document.addEventListener('visibilitychange', syncPlaybackState);
+        syncVideoPlayback = syncPlaybackState;
+        setVideoExposure(100);
+
+        (async function initVideoFrames() {
+          try {
+            var frames = await loadSequentialVideoFrames('hdr_video');
+            await setVideoFramesAndPlay(frames);
+          } catch (err) {
+            showVideoStatus('Could not auto-load hdr_video/*.hdr. Click "Load hdr_video Folder".', true);
+            videoFolderBtn.classList.remove('u-hidden');
+          }
+        })();
       })();
     })();
   </script>
