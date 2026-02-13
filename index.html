@@ -363,38 +363,16 @@
       background: #000;
     }
 
-    .video-folder-btn {
-      position: absolute;
-      top: 0.75rem;
-      right: 0.75rem;
-      border: 1px solid #2f2f3a;
-      border-radius: 8px;
-      background: #1f1f26;
-      color: var(--text);
-      font: inherit;
-      font-size: 0.75rem;
-      padding: 0.35rem 0.55rem;
-      cursor: pointer;
-      z-index: 3;
-    }
-
-    .video-folder-btn:hover {
-      border-color: #4b5563;
-    }
-
     .u-hidden {
       display: none !important;
     }
 
     .video-timeline {
-      position: absolute;
-      left: 0.75rem;
-      right: 0.75rem;
-      bottom: 0.75rem;
-      z-index: 3;
       display: flex;
       align-items: center;
       gap: 0.6rem;
+      width: 100%;
+      margin-top: 0.75rem;
       padding: 0.5rem 0.65rem;
       border-radius: 10px;
       border: 1px solid #2f2f3a;
@@ -522,13 +500,11 @@
         <div class="scene-hdr-wrap" id="videoSceneWrap">
           <canvas id="videoCanvas" aria-label="HDR video frame"></canvas>
           <div class="loading" id="videoStatus">Loading HDR frames…</div>
-          <button class="video-folder-btn u-hidden" id="videoFolderBtn" type="button">Load hdr_video Folder</button>
-          <input class="u-hidden" type="file" id="videoFolderInput" webkitdirectory directory multiple accept=".hdr">
-          <div class="video-timeline">
-            <button id="videoPlayPauseBtn" type="button">Pause</button>
-            <input type="range" id="videoFrameSlider" min="0" max="0" value="0" step="1" aria-label="Video frame position">
-            <span class="video-timeline__counter" id="videoFrameCounter">0/0</span>
-          </div>
+        </div>
+        <div class="video-timeline">
+          <button id="videoPlayPauseBtn" type="button">Pause</button>
+          <input type="range" id="videoFrameSlider" min="0" max="0" value="0" step="1" aria-label="Video frame position">
+          <span class="video-timeline__counter" id="videoFrameCounter">0/0</span>
         </div>
       </div>
     </div>
@@ -543,7 +519,6 @@
       var panelScene = document.getElementById('panel-scene');
       var panelVideo = document.getElementById('panel-video');
       var syncVideoPlayback = null;
-      var maybePromptVideoFolder = null;
 
       function activateTab(tab, panel) {
         tabDisplay.classList.remove('is-active');
@@ -559,7 +534,6 @@
         panel.classList.add('is-active');
         tab.setAttribute('aria-selected', 'true');
         if (typeof syncVideoPlayback === 'function') syncVideoPlayback();
-        if (panel === panelVideo && typeof maybePromptVideoFolder === 'function') maybePromptVideoFolder();
       }
 
       tabDisplay.addEventListener('click', function () { activateTab(tabDisplay, panelDisplay); });
@@ -656,8 +630,6 @@
         var videoExposureValue = document.getElementById('videoExposureValue');
         var videoStatus = document.getElementById('videoStatus');
         var videoCanvas = document.getElementById('videoCanvas');
-        var videoFolderBtn = document.getElementById('videoFolderBtn');
-        var videoFolderInput = document.getElementById('videoFolderInput');
         var videoPlayPauseBtn = document.getElementById('videoPlayPauseBtn');
         var videoFrameSlider = document.getElementById('videoFrameSlider');
         var videoFrameCounter = document.getElementById('videoFrameCounter');
@@ -671,8 +643,6 @@
         var videoFrameIntervalMs = 1000 / 12;
         var isVideoPlaying = false;
         var videoPausedByUser = false;
-        var videoAutoLoadFailed = false;
-        var videoAutoPrompted = false;
 
         function showVideoStatus(message, isError) {
           videoStatus.textContent = message;
@@ -926,16 +896,6 @@
           });
         }
 
-        function readFileAsArrayBuffer(file) {
-          if (file.arrayBuffer) return file.arrayBuffer();
-          return new Promise(function (resolve, reject) {
-            var reader = new FileReader();
-            reader.onload = function () { resolve(reader.result); };
-            reader.onerror = function () { reject(new Error('Failed to read ' + file.name)); };
-            reader.readAsArrayBuffer(file);
-          });
-        }
-
         async function loadSequentialVideoFrames(folder) {
           var loaded = [];
           for (var i = 0; i < 2000; i++) {
@@ -972,59 +932,16 @@
           throw new Error('No HDR frames found in hdr_video');
         }
 
-        async function loadVideoFramesFromFileList(fileList) {
-          var hdrFiles = Array.prototype.filter.call(fileList, function (file) {
-            return /\.hdr$/i.test(file.name);
-          });
-          hdrFiles.sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }); });
-          if (!hdrFiles.length) throw new Error('No .hdr files selected');
-
-          var loaded = [];
-          for (var i = 0; i < hdrFiles.length; i++) {
-            showVideoStatus('Loading ' + hdrFiles[i].name + '…', false);
-            var buffer = await readFileAsArrayBuffer(hdrFiles[i]);
-            loaded.push(parseRadianceHdr(buffer));
-          }
-          return loaded;
-        }
-
         async function setVideoFramesAndPlay(newFrames) {
           if (!newFrames || !newFrames.length) throw new Error('No HDR frames found');
           videoFrames = newFrames;
           videoFrameIndex = 0;
-          videoAutoLoadFailed = false;
-          videoAutoPrompted = false;
           renderVideoFrame(videoFrames[videoFrameIndex]);
           hideVideoStatus();
-          videoFolderBtn.classList.add('u-hidden');
           videoPausedByUser = false;
           updateVideoTimelineUi();
           syncPlaybackState();
         }
-
-        function maybePromptVideoFolderFromGesture() {
-          if (!videoAutoLoadFailed || videoFrames.length || videoAutoPrompted) return;
-          videoAutoPrompted = true;
-          videoFolderInput.click();
-        }
-
-        videoFolderBtn.addEventListener('click', function () {
-          videoFolderInput.click();
-        });
-
-        videoFolderInput.addEventListener('change', async function () {
-          if (!videoFolderInput.files || !videoFolderInput.files.length) return;
-          try {
-            videoFolderBtn.disabled = true;
-            var selectedFrames = await loadVideoFramesFromFileList(videoFolderInput.files);
-            await setVideoFramesAndPlay(selectedFrames);
-          } catch (err) {
-            showVideoStatus('Could not load selected HDR files: ' + err.message, true);
-          } finally {
-            videoFolderBtn.disabled = false;
-            videoFolderInput.value = '';
-          }
-        });
 
         videoPlayPauseBtn.addEventListener('click', toggleVideoPause);
         videoFrameSlider.addEventListener('input', function () {
@@ -1033,7 +950,6 @@
         videoExposureSlider.addEventListener('input', function () { setVideoExposure(videoExposureSlider.value); });
         document.addEventListener('visibilitychange', syncPlaybackState);
         syncVideoPlayback = syncPlaybackState;
-        maybePromptVideoFolder = maybePromptVideoFolderFromGesture;
         setVideoExposure(100);
         updateVideoTimelineUi();
 
@@ -1042,9 +958,7 @@
             var frames = await autoLoadVideoFrames();
             await setVideoFramesAndPlay(frames);
           } catch (err) {
-            videoAutoLoadFailed = true;
-            showVideoStatus('Could not auto-load hdr_video/*.hdr. Click "Load hdr_video Folder".', true);
-            videoFolderBtn.classList.remove('u-hidden');
+            showVideoStatus('Could not load hdr_video/*.hdr — ' + err.message, true);
           }
         })();
       })();
