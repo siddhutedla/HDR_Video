@@ -396,6 +396,12 @@
       border-color: #5b5b67;
     }
 
+    .video-pick-btn {
+      max-width: 112px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .video-timeline input[type="range"] {
       flex: 1;
       min-width: 120px;
@@ -500,9 +506,11 @@
         <div class="scene-hdr-wrap" id="videoSceneWrap">
           <canvas id="videoCanvas" aria-label="HDR video frame"></canvas>
           <div class="loading" id="videoStatus">Loading HDR frames…</div>
+          <input class="u-hidden" type="file" id="videoFolderInput" webkitdirectory directory multiple accept=".hdr">
         </div>
         <div class="video-timeline">
           <button id="videoPlayPauseBtn" type="button">Pause</button>
+          <button id="videoPickDirBtn" class="video-pick-btn" type="button">Choose Folder</button>
           <input type="range" id="videoFrameSlider" min="0" max="0" value="0" step="1" aria-label="Video frame position">
           <span class="video-timeline__counter" id="videoFrameCounter">0/0</span>
         </div>
@@ -519,6 +527,7 @@
       var panelScene = document.getElementById('panel-scene');
       var panelVideo = document.getElementById('panel-video');
       var syncVideoPlayback = null;
+      var maybePromptVideoFolder = null;
 
       function activateTab(tab, panel) {
         tabDisplay.classList.remove('is-active');
@@ -534,6 +543,7 @@
         panel.classList.add('is-active');
         tab.setAttribute('aria-selected', 'true');
         if (typeof syncVideoPlayback === 'function') syncVideoPlayback();
+        if (panel === panelVideo && typeof maybePromptVideoFolder === 'function') maybePromptVideoFolder();
       }
 
       tabDisplay.addEventListener('click', function () { activateTab(tabDisplay, panelDisplay); });
@@ -630,7 +640,9 @@
         var videoExposureValue = document.getElementById('videoExposureValue');
         var videoStatus = document.getElementById('videoStatus');
         var videoCanvas = document.getElementById('videoCanvas');
+        var videoFolderInput = document.getElementById('videoFolderInput');
         var videoPlayPauseBtn = document.getElementById('videoPlayPauseBtn');
+        var videoPickDirBtn = document.getElementById('videoPickDirBtn');
         var videoFrameSlider = document.getElementById('videoFrameSlider');
         var videoFrameCounter = document.getElementById('videoFrameCounter');
         var videoCtx = videoCanvas.getContext('2d');
@@ -643,6 +655,9 @@
         var videoFrameIntervalMs = 1000 / 12;
         var isVideoPlaying = false;
         var videoPausedByUser = false;
+        var videoAutoLoadFailed = false;
+        var videoAutoPrompted = false;
+        var supportsFileSystemAccess = typeof window.showDirectoryPicker === 'function' && typeof window.indexedDB !== 'undefined';
 
         function showVideoStatus(message, isError) {
           videoStatus.textContent = message;
@@ -675,6 +690,7 @@
           videoPlayPauseBtn.textContent = videoPausedByUser ? 'Play' : 'Pause';
           videoPlayPauseBtn.disabled = total <= 1;
           videoFrameSlider.disabled = total <= 1;
+          videoPickDirBtn.disabled = false;
         }
 
         function readAsciiLine(bytes, state) {
@@ -896,6 +912,131 @@
           });
         }
 
+        function readFileAsArrayBuffer(file) {
+          if (file.arrayBuffer) return file.arrayBuffer();
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(reader.result); };
+            reader.onerror = function () { reject(new Error('Failed to read ' + file.name)); };
+            reader.readAsArrayBuffer(file);
+          });
+        }
+
+        function openVideoHandleDb() {
+          return new Promise(function (resolve, reject) {
+            if (!window.indexedDB) {
+              reject(new Error('IndexedDB unavailable'));
+              return;
+            }
+            var req = indexedDB.open('hdrVideoPlayerDb', 1);
+            req.onupgradeneeded = function () {
+              if (!req.result.objectStoreNames.contains('kv')) req.result.createObjectStore('kv');
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error || new Error('IndexedDB open failed')); };
+          });
+        }
+
+        async function idbGet(key) {
+          var db = await openVideoHandleDb();
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction('kv', 'readonly');
+            var store = tx.objectStore('kv');
+            var req = store.get(key);
+            req.onsuccess = function () { resolve(req.result || null); };
+            req.onerror = function () { reject(req.error || new Error('IndexedDB read failed')); };
+            tx.oncomplete = function () { db.close(); };
+          });
+        }
+
+        async function idbSet(key, value) {
+          var db = await openVideoHandleDb();
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction('kv', 'readwrite');
+            var store = tx.objectStore('kv');
+            var req = store.put(value, key);
+            req.onsuccess = function () { resolve(); };
+            req.onerror = function () { reject(req.error || new Error('IndexedDB write failed')); };
+            tx.oncomplete = function () { db.close(); };
+          });
+        }
+
+        async function loadVideoFramesFromFileList(fileList) {
+          var hdrFiles = Array.prototype.filter.call(fileList, function (file) {
+            return /\.hdr$/i.test(file.name);
+          });
+          hdrFiles.sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }); });
+          if (!hdrFiles.length) throw new Error('No .hdr files found');
+
+          var loaded = [];
+          for (var i = 0; i < hdrFiles.length; i++) {
+            showVideoStatus('Loading ' + hdrFiles[i].name + '…', false);
+            var buffer = await readFileAsArrayBuffer(hdrFiles[i]);
+            loaded.push(parseRadianceHdr(buffer));
+          }
+          return loaded;
+        }
+
+        async function loadVideoFramesFromDirectoryHandle(dirHandle) {
+          var fileHandles = [];
+          for await (var entry of dirHandle.values()) {
+            if (entry.kind === 'file' && /\.hdr$/i.test(entry.name)) {
+              fileHandles.push(entry);
+            }
+          }
+          fileHandles.sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }); });
+          if (!fileHandles.length) throw new Error('No .hdr files found in selected folder');
+
+          var loaded = [];
+          for (var i = 0; i < fileHandles.length; i++) {
+            showVideoStatus('Loading ' + fileHandles[i].name + '…', false);
+            var file = await fileHandles[i].getFile();
+            var buffer = await readFileAsArrayBuffer(file);
+            loaded.push(parseRadianceHdr(buffer));
+          }
+          return loaded;
+        }
+
+        async function loadVideoFramesFromStoredDirectoryHandle() {
+          if (!supportsFileSystemAccess) throw new Error('File System Access API unavailable');
+          var handle = await idbGet('hdrVideoDirHandle');
+          if (!handle) throw new Error('No stored folder permission');
+          if (typeof handle.queryPermission !== 'function') throw new Error('Stored folder handle unsupported');
+          var permission = await handle.queryPermission({ mode: 'read' });
+          if (permission !== 'granted') throw new Error('Stored folder permission not granted');
+          return loadVideoFramesFromDirectoryHandle(handle);
+        }
+
+        async function pickDirectoryAndLoadFromUserGesture() {
+          if (supportsFileSystemAccess) {
+            var handle = await window.showDirectoryPicker({ mode: 'read', id: 'hdr-video-folder' });
+            var permission = 'prompt';
+            if (typeof handle.queryPermission === 'function') permission = await handle.queryPermission({ mode: 'read' });
+            if (permission !== 'granted' && typeof handle.requestPermission === 'function') {
+              permission = await handle.requestPermission({ mode: 'read' });
+            }
+            if (permission !== 'granted') throw new Error('Folder read permission denied');
+            try { await idbSet('hdrVideoDirHandle', handle); } catch (e) {}
+            return loadVideoFramesFromDirectoryHandle(handle);
+          }
+
+          return new Promise(function (resolve, reject) {
+            var onChange = async function () {
+              videoFolderInput.removeEventListener('change', onChange);
+              try {
+                if (!videoFolderInput.files || !videoFolderInput.files.length) throw new Error('No files selected');
+                var frames = await loadVideoFramesFromFileList(videoFolderInput.files);
+                videoFolderInput.value = '';
+                resolve(frames);
+              } catch (err) {
+                reject(err);
+              }
+            };
+            videoFolderInput.addEventListener('change', onChange, { once: true });
+            videoFolderInput.click();
+          });
+        }
+
         async function loadSequentialVideoFrames(folder) {
           var loaded = [];
           for (var i = 0; i < 2000; i++) {
@@ -915,11 +1056,12 @@
         }
 
         async function autoLoadVideoFrames() {
+          var lastErr = null;
+
           var candidates = ['hdr_video', './hdr_video'];
           var urlBased = new URL('hdr_video', window.location.href).toString();
           if (candidates.indexOf(urlBased) === -1) candidates.push(urlBased);
 
-          var lastErr = null;
           for (var i = 0; i < candidates.length; i++) {
             try {
               var frames = await loadSequentialVideoFrames(candidates[i]);
@@ -928,6 +1070,14 @@
               lastErr = err;
             }
           }
+
+          try {
+            var storedHandleFrames = await loadVideoFramesFromStoredDirectoryHandle();
+            if (storedHandleFrames.length) return storedHandleFrames;
+          } catch (errStored) {
+            lastErr = errStored;
+          }
+
           if (lastErr) throw lastErr;
           throw new Error('No HDR frames found in hdr_video');
         }
@@ -936,6 +1086,8 @@
           if (!newFrames || !newFrames.length) throw new Error('No HDR frames found');
           videoFrames = newFrames;
           videoFrameIndex = 0;
+          videoAutoLoadFailed = false;
+          videoAutoPrompted = false;
           renderVideoFrame(videoFrames[videoFrameIndex]);
           hideVideoStatus();
           videoPausedByUser = false;
@@ -943,13 +1095,34 @@
           syncPlaybackState();
         }
 
+        async function promptForFolderAndLoad() {
+          try {
+            videoPickDirBtn.disabled = true;
+            showVideoStatus('Choose your hdr_video folder…', false);
+            var chosenFrames = await pickDirectoryAndLoadFromUserGesture();
+            await setVideoFramesAndPlay(chosenFrames);
+          } catch (err) {
+            showVideoStatus('Could not load folder: ' + err.message, true);
+          } finally {
+            videoPickDirBtn.disabled = false;
+          }
+        }
+
+        function maybePromptVideoFolderFromGesture() {
+          if (!videoAutoLoadFailed || videoFrames.length || videoAutoPrompted) return;
+          videoAutoPrompted = true;
+          promptForFolderAndLoad();
+        }
+
         videoPlayPauseBtn.addEventListener('click', toggleVideoPause);
+        videoPickDirBtn.addEventListener('click', promptForFolderAndLoad);
         videoFrameSlider.addEventListener('input', function () {
           setVideoFrameIndex(videoFrameSlider.value);
         });
         videoExposureSlider.addEventListener('input', function () { setVideoExposure(videoExposureSlider.value); });
         document.addEventListener('visibilitychange', syncPlaybackState);
         syncVideoPlayback = syncPlaybackState;
+        maybePromptVideoFolder = maybePromptVideoFolderFromGesture;
         setVideoExposure(100);
         updateVideoTimelineUi();
 
@@ -958,7 +1131,8 @@
             var frames = await autoLoadVideoFrames();
             await setVideoFramesAndPlay(frames);
           } catch (err) {
-            showVideoStatus('Could not load hdr_video/*.hdr — ' + err.message, true);
+            videoAutoLoadFailed = true;
+            showVideoStatus('Auto-load blocked. Open HDR Video tab and choose folder once, then it will auto-load next time.', true);
           }
         })();
       })();
