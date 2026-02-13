@@ -386,6 +386,51 @@
       display: none !important;
     }
 
+    .video-timeline {
+      position: absolute;
+      left: 0.75rem;
+      right: 0.75rem;
+      bottom: 0.75rem;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.5rem 0.65rem;
+      border-radius: 10px;
+      border: 1px solid #2f2f3a;
+      background: rgba(10, 10, 14, 0.78);
+      backdrop-filter: blur(3px);
+    }
+
+    .video-timeline button {
+      border: 1px solid #40404a;
+      border-radius: 7px;
+      background: #1f1f26;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.76rem;
+      padding: 0.28rem 0.55rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .video-timeline button:hover {
+      border-color: #5b5b67;
+    }
+
+    .video-timeline input[type="range"] {
+      flex: 1;
+      min-width: 120px;
+      accent-color: var(--accent);
+    }
+
+    .video-timeline__counter {
+      font-size: 0.78rem;
+      color: #a1a1aa;
+      min-width: 3.6rem;
+      text-align: right;
+    }
+
   </style>
   <svg style="position:absolute;width:0;height:0" aria-hidden="true">
     <defs>
@@ -479,6 +524,11 @@
           <div class="loading" id="videoStatus">Loading HDR frames…</div>
           <button class="video-folder-btn u-hidden" id="videoFolderBtn" type="button">Load hdr_video Folder</button>
           <input class="u-hidden" type="file" id="videoFolderInput" webkitdirectory directory multiple accept=".hdr">
+          <div class="video-timeline">
+            <button id="videoPlayPauseBtn" type="button">Pause</button>
+            <input type="range" id="videoFrameSlider" min="0" max="0" value="0" step="1" aria-label="Video frame position">
+            <span class="video-timeline__counter" id="videoFrameCounter">0/0</span>
+          </div>
         </div>
       </div>
     </div>
@@ -493,6 +543,7 @@
       var panelScene = document.getElementById('panel-scene');
       var panelVideo = document.getElementById('panel-video');
       var syncVideoPlayback = null;
+      var maybePromptVideoFolder = null;
 
       function activateTab(tab, panel) {
         tabDisplay.classList.remove('is-active');
@@ -508,6 +559,7 @@
         panel.classList.add('is-active');
         tab.setAttribute('aria-selected', 'true');
         if (typeof syncVideoPlayback === 'function') syncVideoPlayback();
+        if (panel === panelVideo && typeof maybePromptVideoFolder === 'function') maybePromptVideoFolder();
       }
 
       tabDisplay.addEventListener('click', function () { activateTab(tabDisplay, panelDisplay); });
@@ -606,6 +658,9 @@
         var videoCanvas = document.getElementById('videoCanvas');
         var videoFolderBtn = document.getElementById('videoFolderBtn');
         var videoFolderInput = document.getElementById('videoFolderInput');
+        var videoPlayPauseBtn = document.getElementById('videoPlayPauseBtn');
+        var videoFrameSlider = document.getElementById('videoFrameSlider');
+        var videoFrameCounter = document.getElementById('videoFrameCounter');
         var videoCtx = videoCanvas.getContext('2d');
         var videoFrames = [];
         var videoFrameIndex = 0;
@@ -615,6 +670,9 @@
         var videoLastFrameMs = 0;
         var videoFrameIntervalMs = 1000 / 12;
         var isVideoPlaying = false;
+        var videoPausedByUser = false;
+        var videoAutoLoadFailed = false;
+        var videoAutoPrompted = false;
 
         function showVideoStatus(message, isError) {
           videoStatus.textContent = message;
@@ -636,6 +694,17 @@
           var evText = ev >= 0 ? '+' + ev.toFixed(1) : ev.toFixed(1);
           videoExposureValue.textContent = evText + ' EV';
           if (videoFrames.length) renderVideoFrame(videoFrames[videoFrameIndex]);
+        }
+
+        function updateVideoTimelineUi() {
+          var total = videoFrames.length;
+          var current = total ? videoFrameIndex : 0;
+          videoFrameSlider.max = total > 0 ? String(total - 1) : '0';
+          videoFrameSlider.value = String(current);
+          videoFrameCounter.textContent = current + '/' + total;
+          videoPlayPauseBtn.textContent = videoPausedByUser ? 'Play' : 'Pause';
+          videoPlayPauseBtn.disabled = total <= 1;
+          videoFrameSlider.disabled = total <= 1;
         }
 
         function readAsciiLine(bytes, state) {
@@ -765,10 +834,11 @@
           }
 
           videoCtx.putImageData(videoImageData, 0, 0);
+          updateVideoTimelineUi();
         }
 
         function shouldPlayVideo() {
-          return !document.hidden && panelVideo.classList.contains('is-active') && videoFrames.length > 1;
+          return !videoPausedByUser && !document.hidden && panelVideo.classList.contains('is-active') && videoFrames.length > 1;
         }
 
         function stopVideoPlayback() {
@@ -798,6 +868,19 @@
           } else {
             stopVideoPlayback();
           }
+        }
+
+        function toggleVideoPause() {
+          videoPausedByUser = !videoPausedByUser;
+          updateVideoTimelineUi();
+          syncPlaybackState();
+        }
+
+        function setVideoFrameIndex(nextIndex) {
+          if (!videoFrames.length) return;
+          var maxIndex = videoFrames.length - 1;
+          videoFrameIndex = Math.max(0, Math.min(maxIndex, Number(nextIndex) || 0));
+          renderVideoFrame(videoFrames[videoFrameIndex]);
         }
 
         function loadArrayBufferFromUrl(url) {
@@ -871,6 +954,24 @@
           return loaded;
         }
 
+        async function autoLoadVideoFrames() {
+          var candidates = ['hdr_video', './hdr_video'];
+          var urlBased = new URL('hdr_video', window.location.href).toString();
+          if (candidates.indexOf(urlBased) === -1) candidates.push(urlBased);
+
+          var lastErr = null;
+          for (var i = 0; i < candidates.length; i++) {
+            try {
+              var frames = await loadSequentialVideoFrames(candidates[i]);
+              if (frames.length) return frames;
+            } catch (err) {
+              lastErr = err;
+            }
+          }
+          if (lastErr) throw lastErr;
+          throw new Error('No HDR frames found in hdr_video');
+        }
+
         async function loadVideoFramesFromFileList(fileList) {
           var hdrFiles = Array.prototype.filter.call(fileList, function (file) {
             return /\.hdr$/i.test(file.name);
@@ -891,10 +992,20 @@
           if (!newFrames || !newFrames.length) throw new Error('No HDR frames found');
           videoFrames = newFrames;
           videoFrameIndex = 0;
+          videoAutoLoadFailed = false;
+          videoAutoPrompted = false;
           renderVideoFrame(videoFrames[videoFrameIndex]);
           hideVideoStatus();
           videoFolderBtn.classList.add('u-hidden');
+          videoPausedByUser = false;
+          updateVideoTimelineUi();
           syncPlaybackState();
+        }
+
+        function maybePromptVideoFolderFromGesture() {
+          if (!videoAutoLoadFailed || videoFrames.length || videoAutoPrompted) return;
+          videoAutoPrompted = true;
+          videoFolderInput.click();
         }
 
         videoFolderBtn.addEventListener('click', function () {
@@ -915,16 +1026,23 @@
           }
         });
 
+        videoPlayPauseBtn.addEventListener('click', toggleVideoPause);
+        videoFrameSlider.addEventListener('input', function () {
+          setVideoFrameIndex(videoFrameSlider.value);
+        });
         videoExposureSlider.addEventListener('input', function () { setVideoExposure(videoExposureSlider.value); });
         document.addEventListener('visibilitychange', syncPlaybackState);
         syncVideoPlayback = syncPlaybackState;
+        maybePromptVideoFolder = maybePromptVideoFolderFromGesture;
         setVideoExposure(100);
+        updateVideoTimelineUi();
 
         (async function initVideoFrames() {
           try {
-            var frames = await loadSequentialVideoFrames('hdr_video');
+            var frames = await autoLoadVideoFrames();
             await setVideoFramesAndPlay(frames);
           } catch (err) {
+            videoAutoLoadFailed = true;
             showVideoStatus('Could not auto-load hdr_video/*.hdr. Click "Load hdr_video Folder".', true);
             videoFolderBtn.classList.remove('u-hidden');
           }
